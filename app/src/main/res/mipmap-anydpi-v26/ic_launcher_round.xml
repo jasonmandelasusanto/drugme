@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      The source artwork is a flat 1024px image with a dark backdrop and a glow. Neither
+      survives an adaptive icon: the launcher composites these two layers and applies its
+      own mask (circle on Pixel, squircle on Samsung, and so on), so a baked-in backdrop
+      would show as grey corners and the glow would be sliced into a hard edge.
+
+      So the blue disc is the foreground, sized just over the 72dp safe zone, and the
+      background is a flat blue sampled from the disc's edge — under a circular mask the
+      disc covers it exactly; under a squircle the corners fall back to the same blue.
+    -->
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

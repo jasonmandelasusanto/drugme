@@ -1,0 +1,82 @@
+{
+  "_comment": [
+    "PLACEHOLDER — not a real Firebase project. Contains no secrets.",
+    "",
+    "WHY THIS EXISTS: the google-services Gradle plugin hard-fails when",
+    "app/google-services.json is missing, which would block compiling and testing the",
+    "~90% of this app that has nothing to do with Firebase. The real file is gitignored",
+    "(it identifies the project), so CI injects it from the GOOGLE_SERVICES_JSON secret",
+    "and falls back to this when the secret is absent — on forks, or before setup.",
+    "",
+    "Every id below is fabricated. An APK built against this cannot reach Firebase: no",
+    "sign-in, no sync. That is intentional and adequate for verifying that the code",
+    "compiles and the tests pass. The release workflow refuses to run without the real",
+    "secret, so this can never ship to a phone by accident."
+  ],
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "drugme-placeholder",
+    "storage_bucket": "drugme-placeholder.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "com.drugme.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "000000000000-placeholder.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyPlaceholderPlaceholderPlaceholder00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "000000000000-placeholder.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:1111111111111111111111",
+        "android_client_info": {
+          "package_name": "com.drugme.app.debug"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "000000000000-placeholder.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyPlaceholderPlaceholderPlaceholder00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "000000000000-placeholder.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

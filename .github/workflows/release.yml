@@ -1,0 +1,135 @@
+name: Release APK
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version name (e.g. 0.1.0)'
+        required: true
+        default: '0.1.0'
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false
+
+jobs:
+  release:
+    name: Build signed release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # Needed to attach the APK to a GitHub Release.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Unlike CI, this job refuses to fall back to a placeholder. A release APK with a
+      # fake Firebase config would install fine, look fine, and silently fail to sign in
+      # or sync — the worst kind of broken. Fail loudly instead.
+      - name: Require real Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON secret is not set. A release build must not ship a placeholder Firebase config."
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICES_JSON" | base64 -d > app/google-services.json
+          # A truncated or mis-encoded secret yields a file the plugin rejects later with a
+          # confusing error; check the shape now while the cause is still obvious.
+          node -e "
+            const j = require('./app/google-services.json');
+            if (!j.project_info?.project_id) throw new Error('google-services.json has no project_id');
+            if (j.project_info.project_id === 'drugme-placeholder') throw new Error('Refusing to release against the placeholder config');
+            console.log('Firebase project:', j.project_info.project_id);
+          "
+
+      - name: Require signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret is not set. See .github/RELEASE_SETUP.md."
+            exit 1
+          fi
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > "${{ github.workspace }}/release.jks"
+
+      - name: Write keystore.properties
+        env:
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # app/build.gradle.kts reads this file and only enables release signing when it
+          # exists, so a fresh clone can still assembleDebug without any of these secrets.
+          cat > keystore.properties <<EOF
+          storeFile=${{ github.workspace }}/release.jks
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Unit tests
+        # A release that ships without passing the crypto and schedule tests is not worth
+        # the minutes saved: both fail silently in production.
+        run: ./gradlew testReleaseUnitTest --stacktrace
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Verify the APK is actually signed
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          test -f "$APK" || { echo "::error::No release APK produced"; exit 1; }
+          # assembleRelease succeeds even unsigned (it emits app-release-unsigned.apk), so
+          # a green build is not proof of a signed, installable artifact.
+          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$APK"
+
+      - name: Name the APK
+        id: name
+        run: |
+          VERSION="${{ github.event.inputs.version_name }}"
+          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          mkdir -p artifacts
+          cp app/build/outputs/apk/release/app-release.apk "artifacts/drugme-${VERSION}.apk"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: drugme-release-apk
+          path: artifacts/*.apk
+          retention-days: 90
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.apk
+          generate_release_notes: true
+          body: |
+            ## DrugMe ${{ steps.name.outputs.version }}
+
+            Download the `.apk` below and install it on your phone.
+            You'll need to allow installing from unknown sources.
+
+            **After installing:** open the app and grant notification permission, and let it
+            turn off battery optimisation when asked. On Xiaomi, Huawei, Oppo, vivo and
+            Samsung devices, follow the extra vendor step the app shows — those systems kill
+            background apps regardless of the alarm being scheduled correctly, and reminders
+            will silently stop without it.

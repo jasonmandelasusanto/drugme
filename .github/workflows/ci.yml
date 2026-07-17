@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Lets you build an APK on demand from the Actions tab without pushing anything.
+  workflow_dispatch:
+
+concurrency:
+  # A newer push makes an in-flight run redundant; cancel it rather than pay for both.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Runners have far more headroom than the dev laptop these defaults are tuned for.
+  GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false
+
+jobs:
+  build:
+    name: Test and build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Write google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          # The real config is gitignored — it identifies the Firebase project — so CI
+          # takes it from a secret. When the secret is absent (forks, or before it's set
+          # up) a structurally valid placeholder is written instead: the google-services
+          # plugin hard-fails without this file, which would block compiling and testing
+          # code that has nothing to do with Firebase. The placeholder's IDs are fake, so
+          # the resulting APK cannot talk to Firebase — that's fine for verifying a build,
+          # and the release workflow refuses to run without the real thing.
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" | base64 -d > app/google-services.json
+            echo "Using real google-services.json from secret."
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON secret not set — using placeholder. Firebase will not work in this APK."
+            cp .github/google-services.placeholder.json app/google-services.json
+          fi
+
+      - name: Validate drug catalog assets
+        run: node tools/validate-synonyms.mjs
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Lint
+        run: ./gradlew lintDebug --stacktrace
+        continue-on-error: true
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: |
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk \
+             "artifacts/drugme-debug-${GITHUB_SHA::7}.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: drugme-debug-apk
+          path: artifacts/*.apk
+          # Long enough to install and test on a phone, short enough not to hoard storage.
+          retention-days: 14
+
+      - name: Upload test report
+        # Reports matter most when the run failed, so this must not be skipped on failure.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-*.html
+          retention-days: 7

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors Neutral99 in Color.kt (the Compose light background). -->
+    <color name="window_background">#FDFCFF</color>
+    <!-- Mirrors Blue40, used for the notification accent. -->
+    <color name="brand_blue">#1565C0</color>
+</resources>

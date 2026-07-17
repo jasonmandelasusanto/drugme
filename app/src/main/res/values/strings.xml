@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DrugMe</string>
+
+    <string name="notif_channel_reminders_name">Medication reminders</string>
+    <string name="notif_channel_reminders_desc">Alerts when it is time to take a medication</string>
+
+    <string name="action_taken">Taken</string>
+    <string name="action_snooze">Snooze 10 min</string>
+    <string name="action_skip">Skip</string>
+
+    <string name="reminder_title">Time to take %1$s</string>
+    <string name="reminder_title_discreet">Medication reminder</string>
+    <string name="reminder_body_discreet">Open DrugMe to see your dose</string>
+</resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The Compose theme in ui/theme/Theme.kt owns all in-app color. This XML theme
+      only covers the pre-Compose window (launch background, status bar) so the app
+      doesn't flash a default-purple or black frame before first composition.
+    -->
+    <style name="Theme.DrugMe" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

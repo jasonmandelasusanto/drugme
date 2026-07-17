@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Exact alarms. USE_EXACT_ALARM is a *normal* permission: auto-granted at install,
+      no user prompt, and it sidesteps the Android 13+ change that denies
+      SCHEDULE_EXACT_ALARM by default. Valid here because DrugMe is sideloaded.
+      Play Store policy restricts USE_EXACT_ALARM to alarm-clock/calendar apps, so a
+      future Play release would need this reviewed and the runtime-request path
+      (already implemented in DoseAlarmScheduler) would become the primary route.
+      SCHEDULE_EXACT_ALARM is declared as the fallback for that path.
+    -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      allowBackup=false is load-bearing, not boilerplate. Room holds plaintext, and
+      Android auto-backup would copy that database to the user's Google Drive —
+      handing Google the very data the E2EE sync layer exists to withhold. Backup
+      and restore go through our own encrypted sync path only.
+    -->
+    <application
+        android:name=".DrugMeApplication"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.DrugMe">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.DrugMe">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Not exported: only the AlarmManager PendingIntent and our own notification
+          actions target it. Exporting would let any app on the device forge a "Taken"
+          and falsify the user's adherence record.
+        -->
+        <receiver
+            android:name=".alarm.DoseAlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!--
+          Re-arms the chain after events that destroy pending alarms.
+
+          KNOWN GAP — reboot before first unlock. Room lives in credential-encrypted
+          storage, so it is unreadable until the user unlocks once after a reboot, and
+          BOOT_COMPLETED is only delivered then. A phone that reboots at 03:00 and is not
+          unlocked until 07:00 will not fire a 06:00 dose; it is marked MISSED on the next
+          heal pass instead.
+
+          LOCKED_BOOT_COMPLETED is deliberately NOT registered: it is only delivered to
+          directBootAware components, and making this one direct-boot-aware would require
+          moving the database to device-protected storage — which is encrypted with a
+          device key rather than the user's credential, i.e. readable from a stolen powered
+          -off phone without the PIN. Trading at-rest confidentiality of a medication
+          history for a rare edge case is the wrong bargain, and a half-registered
+          broadcast that never fires would be worse than either.
+
+          QUICKBOOT/HTC actions cover OEMs that never send the standard broadcast.
+          TIMEZONE_CHANGED and TIME_SET matter because doses are stored as wall-clock
+          times; crossing a timezone moves the instant they must fire at.
+        -->
+        <receiver
+            android:name=".alarm.BootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>

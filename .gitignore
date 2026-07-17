@@ -1,0 +1,48 @@
+# Build output.
+#
+# No leading slash: "/build" would only match the root directory and would happily commit
+# app/build/ — which contains the debug APK, every dex intermediate, and (worse)
+# app/build/generated/res/processDebugGoogleServices/values/values.xml, where the
+# google-services plugin writes your real Firebase API key and web client id. Ignoring
+# google-services.json while committing its build output would leak it anyway.
+build/
+.gradle/
+.cxx/
+.externalNativeBuild/
+/captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# IDE
+*.iml
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local machine config — absolute paths, not portable.
+local.properties
+gradle.properties.local
+
+# Firebase config: identifies the project. Injected in CI from the GOOGLE_SERVICES_JSON
+# secret; see .github/RELEASE_SETUP.md.
+google-services.json
+app/google-services.json
+
+# Release signing. Never commit keys or passwords.
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+
+# Keep the CI placeholder, which is fake by design and must be committed.
+!.github/google-services.placeholder.json
+
+# Local icon preview renders — not source; the icon lives in res/drawable as vector XML.
+icon-preview/

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-build-only overlay. Nothing here is merged into a release APK.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!--
+          exported=true so `adb shell am broadcast` can reach it. That is exactly why this
+          file lives in src/debug and not src/main: an exported receiver that writes
+          arbitrary medications and alarms would be a genuine vulnerability in a shipped
+          build, where any installed app could invoke it.
+        -->
+        <receiver
+            android:name="com.drugme.app.debug.DebugSeedReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.drugme.app.debug.SEED" />
+                <action android:name="com.drugme.app.debug.DUMP" />
+                <action android:name="com.drugme.app.debug.REARM" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

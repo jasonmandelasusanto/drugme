@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status-bar icon: a tilted capsule, outlined, with the lower half filled.
+
+  Android discards all colour here and tints the alpha channel flat white, so only
+  *coverage* carries meaning. That rules out deriving this from icon.png: the launcher
+  artwork's white pill half and white clock ring flatten to the same value, and the result
+  is an unreadable blob at 24dp.
+
+  It is also just the capsule, not capsule-plus-clock. Two shapes competing inside 24dp
+  leaves neither legible — the clock hands go first. The notification's own context already
+  says "reminder"; the icon only has to say "medication".
+
+  Vector, so it stays sharp at every density.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:rotation="-45">
+
+        <!-- Capsule outline: two semicircular ends joined by straight sides. -->
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2"
+            android:fillColor="@android:color/transparent"
+            android:pathData="M7,8 a5,5 0 0,1 10,0 v8 a5,5 0 0,1 -10,0 z" />
+
+        <!-- Filled lower half. Inset by 1 so it sits inside the stroke rather than
+             thickening it, which is what turns the shape into a lozenge at small sizes. -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M8,12 h8 v4 a4,4 0 0,1 -4,4 h0 a4,4 0 0,1 -4,-4 z" />
+    </group>
+</vector>

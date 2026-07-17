@@ -1,0 +1,67 @@
+rules_version = '2';
+
+// DrugMe Firestore rules.
+//
+// Deploy:  firebase deploy --only firestore:rules
+// (or paste into Firebase console -> Firestore -> Rules -> Publish)
+//
+// These enforce OWNERSHIP. The encryption enforces CONFIDENTIALITY. Both are needed and
+// neither substitutes for the other: the rules cannot inspect a ciphertext blob, and the
+// crypto cannot stop an authenticated user from filling someone else's collection with
+// garbage. Without rules, every user's blobs would be world-readable — unreadable, but
+// enumerable, and their count and timestamps alone reveal how many medications a person
+// takes and when they changed.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      // The user document itself holds nothing; all data lives in subcollections.
+      allow read, write: if isOwner(uid);
+
+      // Wrapped DEKs. Readable and writable only by their owner.
+      //
+      // Note what this does NOT protect against: these are ciphertext wrapped by an
+      // Argon2id-derived key, so even a total rules failure or an admin with database
+      // access yields only blobs. That is the point of the design — the rules are the
+      // outer layer, not the only one.
+      match /keys/{keyId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // Encrypted medication records.
+      match /records/{recordId} {
+        allow read: if isOwner(uid);
+
+        // Writes must carry the fields the client actually uses, so a malformed or
+        // hostile write cannot leave a record the app then fails to parse forever.
+        allow create, update: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(
+               ['ciphertext', 'nonce', 'updatedAt', 'deleted']
+             )
+          && request.resource.data.updatedAt is int
+          && request.resource.data.deleted is bool
+          // A live record needs its payload; a tombstone explicitly clears it.
+          && (
+               request.resource.data.deleted == true
+               || (request.resource.data.ciphertext is string
+                   && request.resource.data.nonce is string)
+             );
+
+        // Deletion goes through the tombstone path (deleted: true) rather than a real
+        // delete: a hard delete is silently undone by the next device that pushes its
+        // still-present copy.
+        allow delete: if false;
+      }
+    }
+
+    // Anything not matched above is denied. Firestore defaults to deny, but stating it
+    // means a future collection added without rules fails closed rather than open.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

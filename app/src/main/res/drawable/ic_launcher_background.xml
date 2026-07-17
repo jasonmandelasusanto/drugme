@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Matches the source artwork's disc, which is not a flat colour but a vertical gradient
+  (#3893FF at the top to #1972F5 at the bottom).
+
+  A flat background would meet the disc's edge at only one latitude and show a visible
+  circular seam everywhere else — obvious under non-circular launcher masks, where the
+  background fills the corners the disc cannot reach. Sampled from the disc's edge at
+  r=318: top #3893FF, bottom #1972F5, sides land on the midpoint, so a linear vertical
+  ramp tracks the seam all the way round.
+
+  angle=270 runs startColor at the top to endColor at the bottom.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:type="linear"
+        android:angle="270"
+        android:startColor="#3893FF"
+        android:endColor="#1972F5" />
+</shape>
