@@ -1,6 +1,7 @@
 package com.drugme.app.notify
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -85,6 +86,12 @@ class DoseNotifier @Inject constructor(
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
+    // Guarded by hasPermission() on the first line. Lint's permission analysis is
+    // intraprocedural — it cannot see through a helper — so it flags manager.notify() as
+    // unchecked. Suppressed rather than restructured: the check belongs in one place, and
+    // inlining ContextCompat.checkSelfPermission at both call sites to appease the linter
+    // would duplicate it and invite the two copies to drift apart.
+    @SuppressLint("MissingPermission")
     suspend fun notifyDose(item: DoseWithMedication) {
         if (!hasPermission()) return
 
@@ -143,6 +150,7 @@ class DoseNotifier @Inject constructor(
      * heads-up and sound as "take your pill now" trains people to dismiss both. Separate
      * channels also let the user silence refill nags without touching dose reminders.
      */
+    @SuppressLint("MissingPermission") // Guarded by hasPermission() below; see notifyDose.
     suspend fun notifyRefill(medicationName: String, daysRemaining: Int, runOutDate: LocalDate) {
         if (!hasPermission()) return
         val discreet = settings.discreetNotifications.first()

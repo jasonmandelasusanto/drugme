@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -422,14 +423,16 @@ private fun ScheduleSection(state: AddMedicationState, vm: AddMedicationViewMode
             ScheduleType.DAYS_OF_WEEK -> {
                 Text("On these days", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
+                // Read from the composition rather than Locale.getDefault(): the latter is
+                // not observable, so the day initials would stay in the old language until
+                // the Activity was recreated after a language change.
+                val locale: Locale = LocalConfiguration.current.locales[0]
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     DayOfWeek.entries.forEach { day ->
                         FilterChip(
                             selected = day in state.weekdays,
                             onClick = { vm.onWeekdayToggled(day) },
-                            label = {
-                                Text(day.getDisplayName(TextStyle.NARROW, Locale.getDefault()))
-                            },
+                            label = { Text(day.getDisplayName(TextStyle.NARROW, locale)) },
                         )
                     }
                 }

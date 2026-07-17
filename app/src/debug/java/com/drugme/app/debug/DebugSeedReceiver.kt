@@ -77,7 +77,9 @@ class DebugSeedReceiver : BroadcastReceiver() {
         val schedId = UUID.randomUUID().toString()
         val fireAt = now.plusSeconds(secs)
         val zone: ZoneId = clock.zone
-        val localTime = LocalTime.ofInstant(fireAt, zone).withNano(0)
+        // atZone().toLocalTime(), not LocalTime.ofInstant(): the latter is API 31+ and
+        // minSdk here is 26, so it would crash on anything below Android 12. Same result.
+        val localTime = fireAt.atZone(zone).toLocalTime().withNano(0)
 
         medicationRepository.save(
             medication = MedicationEntity(
@@ -114,7 +116,7 @@ class DebugSeedReceiver : BroadcastReceiver() {
                     medicationId = medId,
                     scheduleId = schedId,
                     scheduledAt = fireAt,
-                    localDate = LocalDate.ofInstant(fireAt, zone),
+                    localDate = fireAt.atZone(zone).toLocalDate(), // LocalDate.ofInstant is API 31+
                     status = DoseStatus.PENDING,
                 ),
             )

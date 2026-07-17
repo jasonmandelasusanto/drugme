@@ -99,9 +99,12 @@ android {
     // test fails with "Cannot find the schema file", which reads like a missing export
     // rather than a wiring mistake.
     //
-    // Debug-only, so the ~30KB of schema JSON is not shipped in the release APK.
+    // On "main", so BOTH variants get them. Putting them on "debug" alone passes
+    // testDebugUnitTest and then fails testReleaseUnitTest — which is exactly what the
+    // release workflow runs, so the failure only appears when cutting a release. The ~30KB
+    // of schema JSON in the release APK is worth not having that asymmetry.
     sourceSets {
-        getByName("debug") {
+        getByName("main") {
             assets.srcDirs(files("$projectDir/schemas"))
         }
     }
