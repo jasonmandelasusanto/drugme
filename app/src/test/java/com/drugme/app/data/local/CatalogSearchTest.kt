@@ -44,11 +44,20 @@ class CatalogSearchTest {
     @After
     fun tearDown() = db.close()
 
-    /** Mirrors the escaping in DrugCatalogRepository / DiseaseCatalogRepository. */
+    /**
+     * Mirrors toFtsPrefixQuery in DrugCatalogRepository / DiseaseCatalogRepository.
+     *
+     * Strips punctuation and leaves tokens unquoted. Quoting was the original bug: FTS4
+     * reads `"metf"` as an exact phrase and ignores the trailing star, so `"metf"*` matched
+     * nothing and type-ahead only worked on complete words.
+     */
     private fun ftsQuery(input: String): String =
-        input.trim().split(Regex("\\s+"))
+        input.lowercase()
+            .map { if (it.isLetterOrDigit()) it else ' ' }
+            .joinToString("")
+            .split(' ')
             .filter { it.isNotBlank() }
-            .joinToString(" ") { "\"${it.replace("\"", "\"\"")}\"*" }
+            .joinToString(" ") { "$it*" }
 
     private suspend fun seedDrugs() {
         db.drugCatalogDao().insertAll(

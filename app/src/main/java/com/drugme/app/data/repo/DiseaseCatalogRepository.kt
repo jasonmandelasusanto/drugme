@@ -74,16 +74,26 @@ class DiseaseCatalogRepository @Inject constructor(
     }
 
     /**
-     * Escapes input for FTS MATCH and appends a prefix wildcard.
+     * Turns raw user input into an FTS4 prefix query.
      *
-     * MeSH names are full of commas and parentheses ("Diabetes Mellitus, Type 2",
-     * "Hypertension, Pulmonary"), and FTS treats punctuation as syntax — raw input throws
-     * mid-keystroke. Quoting each token makes it a literal.
+     * MUST NOT quote the tokens. FTS4 treats `"metf"` as an exact *phrase*, and a trailing
+     * star on a quoted phrase is inert — `"metf"*` matches nothing at all, so type-ahead
+     * only ever fired once you typed the whole word. Verified: `metf*` -> metformin,
+     * `"metf"*` -> no rows.
+     *
+     * Punctuation is stripped rather than escaped because the default tokenizer already
+     * treats it as a separator: "st john's wort" indexes as [st, john, s, wort]. Stripping
+     * it here means the query can never contain FTS operators (`"`, `*`, `-`, `^`, AND/OR/
+     * NOT), which is what made escaping necessary in the first place — a stray quote used
+     * to throw a SQLiteException mid-keystroke.
      */
     private fun toFtsPrefixQuery(input: String): String =
-        input.split(Regex("\\s+"))
+        input.lowercase()
+            .map { if (it.isLetterOrDigit()) it else ' ' }
+            .joinToString("")
+            .split(' ')
             .filter { it.isNotBlank() }
-            .joinToString(" ") { token -> "\"${token.replace("\"", "\"\"")}\"*" }
+            .joinToString(" ") { "$it*" }
 
     private companion object {
         const val TAG = "DiseaseCatalogRepo"

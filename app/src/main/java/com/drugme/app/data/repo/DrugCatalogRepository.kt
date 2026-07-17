@@ -114,20 +114,26 @@ class DrugCatalogRepository @Inject constructor(
     )
 
     /**
-     * Escapes user input for FTS MATCH and appends a prefix wildcard.
+     * Turns raw user input into an FTS4 prefix query.
      *
-     * FTS has its own query grammar, so raw input reaches it as syntax: a stray quote or a
-     * bare "-" throws mid-keystroke, and drug names legitimately contain hyphens, commas
-     * and parentheses ("alpha-tocopherol", "estrogens, conjugated (usp)"). Wrapping each
-     * token in double quotes makes it a literal phrase.
+     * MUST NOT quote the tokens. FTS4 treats `"metf"` as an exact *phrase*, and a trailing
+     * star on a quoted phrase is inert — `"metf"*` matches nothing at all, so type-ahead
+     * only ever fired once you typed the whole word. Verified: `metf*` -> metformin,
+     * `"metf"*` -> no rows.
+     *
+     * Punctuation is stripped rather than escaped because the default tokenizer already
+     * treats it as a separator: "st john's wort" indexes as [st, john, s, wort]. Stripping
+     * it here means the query can never contain FTS operators (`"`, `*`, `-`, `^`, AND/OR/
+     * NOT), which is what made escaping necessary in the first place — a stray quote used
+     * to throw a SQLiteException mid-keystroke.
      */
     private fun toFtsPrefixQuery(input: String): String =
-        input.split(Regex("\\s+"))
+        input.lowercase()
+            .map { if (it.isLetterOrDigit()) it else ' ' }
+            .joinToString("")
+            .split(' ')
             .filter { it.isNotBlank() }
-            .joinToString(" ") { token ->
-                val escaped = token.replace("\"", "\"\"")
-                "\"$escaped\"*"
-            }
+            .joinToString(" ") { "$it*" }
 
     private companion object {
         const val ASSET_DRUGS = "drugs.json"

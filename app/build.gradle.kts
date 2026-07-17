@@ -89,12 +89,19 @@ android {
         }
     }
 
-    // MigrationTestHelper reads the exported schema JSON to build the "old" database. Room
-    // writes it to $projectDir/schemas via ksp; it has to be on the test source set's
-    // assets or the helper cannot find it and every migration test fails with a confusing
-    // "Cannot find the schema file" rather than a real result.
+    // MigrationTestHelper loads the exported schema JSON from *assets* to rebuild the old
+    // database. Room's ksp writes those to $projectDir/schemas.
+    //
+    // They must go on the DEBUG source set, not "test". Robolectric reads whatever the
+    // generated test_config.properties points at, and that is
+    // `android_merged_assets=…/assets/debug/mergeDebugAssets` — the debug variant's merged
+    // assets. Assets added to the "test" source set never reach it, and every migration
+    // test fails with "Cannot find the schema file", which reads like a missing export
+    // rather than a wiring mistake.
+    //
+    // Debug-only, so the ~30KB of schema JSON is not shipped in the release APK.
     sourceSets {
-        getByName("test") {
+        getByName("debug") {
             assets.srcDirs(files("$projectDir/schemas"))
         }
     }
