@@ -94,11 +94,21 @@ jobs:
 
       - name: Verify the APK is actually signed
         run: |
+          set -euo pipefail
           APK=app/build/outputs/apk/release/app-release.apk
           test -f "$APK" || { echo "::error::No release APK produced"; exit 1; }
-          # assembleRelease succeeds even unsigned (it emits app-release-unsigned.apk), so
-          # a green build is not proof of a signed, installable artifact.
-          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$APK"
+
+          # Pick exactly one apksigner. Runners ship several build-tools versions, so a
+          # glob here expands to every one of them and the extra paths get passed to the
+          # first as arguments ("Unsupported command: .../apksigner").
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          test -n "$APKSIGNER" || { echo "::error::apksigner not found"; exit 1; }
+          echo "Using $APKSIGNER"
+
+          # assembleRelease succeeds even when signing is not configured — it just emits
+          # app-release-unsigned.apk, which no phone will install. A green build is not
+          # proof of a signed artifact, so verify rather than assume.
+          "$APKSIGNER" verify --print-certs "$APK"
 
       - name: Name the APK
         id: name
