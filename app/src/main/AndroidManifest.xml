@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
       Exact alarms. USE_EXACT_ALARM is a *normal* permission: auto-granted at install,
@@ -37,6 +38,31 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.DrugMe">
+
+        <!--
+          Disable WorkManager's automatic startup initialisation.
+
+          DrugMeApplication implements Configuration.Provider to supply the
+          HiltWorkerFactory. Without removing this initialiser, androidx.startup gets there
+          first and initialises WorkManager eagerly with the *default* configuration — our
+          factory is never installed, and RearmWorker (a @HiltWorker, so it needs injected
+          constructor args) cannot be instantiated at all.
+
+          RearmWorker is the healer: the daily pass that re-arms the alarm chain if a link
+          is ever dropped. It would have failed on every run, silently, and the first
+          symptom would have been a user's reminders stopping for good. Caught by
+          lintVitalRelease, which only runs on release builds — debug never sees it.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
         <activity
             android:name=".MainActivity"
