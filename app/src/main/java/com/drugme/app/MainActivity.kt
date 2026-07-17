@@ -1,17 +1,10 @@
 package com.drugme.app
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.drugme.app.alarm.DoseAlarmScheduler
 import com.drugme.app.alarm.RearmWorker
@@ -32,20 +25,14 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var catalogRepository: DrugCatalogRepository
     @Inject lateinit var diseaseCatalogRepository: DiseaseCatalogRepository
 
-    private val requestNotifications =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            // Denial is survivable: doses are still tracked and the in-app list stays
-            // correct. It does gut the core feature, so onboarding explains the stakes
-            // rather than re-prompting here.
-            Log.i(TAG, "POST_NOTIFICATIONS granted=$granted")
-        }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         RearmWorker.enqueue(this)
-        maybeRequestNotificationPermission()
+        // POST_NOTIFICATIONS is requested from the onboarding Reminders step, where the
+        // rationale is shown, rather than blindly here on launch (which surfaced the system
+        // dialog over the disclaimer).
 
         lifecycleScope.launch {
             // First-launch import of the bundled catalog. Failure only costs autosuggest,
@@ -80,13 +67,6 @@ class MainActivity : ComponentActivity() {
                 scheduler.rescheduleNext()
             }.onFailure { Log.e(TAG, "Foreground re-arm failed", it) }
         }
-    }
-
-    private fun maybeRequestNotificationPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        if (!granted) requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private companion object {

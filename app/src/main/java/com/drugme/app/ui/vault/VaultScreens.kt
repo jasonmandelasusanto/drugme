@@ -121,8 +121,11 @@ fun VaultSetupScreen(
         Text("Create your encryption passphrase", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "This passphrase encrypts your medications before they leave your phone. " +
-                "It is never sent anywhere, so nobody — including us — can reset it for you.",
+            "Your passphrase locks your medicines so only you can read them. Even in the " +
+                "cloud backup, we only ever keep a scrambled copy that we can't open. " +
+                "Because we never see your passphrase, we can't reset it for you — so pick " +
+                "something you'll remember. You'll also get a backup code on the next " +
+                "screen, in case you forget.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

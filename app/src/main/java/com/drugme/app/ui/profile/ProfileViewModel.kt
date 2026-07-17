@@ -9,6 +9,7 @@ import com.drugme.app.data.local.dao.MedicationWithSchedules
 import com.drugme.app.data.repo.AccountDeleter
 import com.drugme.app.data.repo.DoseRepository
 import com.drugme.app.data.repo.MedicationRepository
+import com.drugme.app.data.sync.SyncEngine
 import com.drugme.app.domain.model.DoseStatus
 import com.drugme.app.domain.schedule.Forecast
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -79,6 +80,7 @@ class ProfileViewModel @Inject constructor(
     private val auth: AuthRepository,
     private val doseRepository: DoseRepository,
     private val medicationRepository: MedicationRepository,
+    private val syncEngine: SyncEngine,
     private val accountDeleter: AccountDeleter,
     private val clock: Clock,
 ) : ViewModel() {
@@ -182,6 +184,21 @@ class ProfileViewModel @Inject constructor(
 
     fun signOut() {
         viewModelScope.launch { auth.signOut() }
+    }
+
+    /**
+     * Deletes a single medication. Cascades to its schedules and dose history — see
+     * MedicationRepository.delete. The list refreshes on its own via observe().
+     *
+     * The remote tombstone is essential, not optional: a plain local delete would be
+     * resurrected on the next sync, because the record still exists in Firestore and pull()
+     * would treat it as a new medication to download. markDeleted no-ops when signed out.
+     */
+    fun deleteMedication(id: String) {
+        viewModelScope.launch {
+            medicationRepository.delete(id)
+            syncEngine.markDeleted(id)
+        }
     }
 
     /**

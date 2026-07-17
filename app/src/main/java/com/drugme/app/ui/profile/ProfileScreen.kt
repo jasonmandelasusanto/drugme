@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Schedule
@@ -54,6 +55,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.drugme.app.R
+import com.drugme.app.data.local.entity.MedicationEntity
 import com.drugme.app.ui.components.SectionCard
 import com.drugme.app.ui.theme.LocalDoseColors
 import kotlin.math.abs
@@ -69,6 +71,7 @@ fun ProfileScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<MedicationEntity?>(null) }
 
     LaunchedEffect(state.deleted) {
         if (state.deleted) onSignedOut()
@@ -95,7 +98,7 @@ fun ProfileScreen(
             item { AdherenceCard(state) }
             item { PunctualityCard(state) }
             item { UsageCard(state) }
-            item { MedicationsCard(state, onEditMedication) }
+            item { MedicationsCard(state, onEditMedication, onDelete = { pendingDelete = it }) }
             item { DangerZone(state, onSignOut = { viewModel.signOut(); onSignedOut() }, onDelete = { confirmDelete = true }) }
             state.error?.let {
                 item { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
@@ -109,6 +112,17 @@ fun ProfileScreen(
             busy = state.deleting,
             onConfirm = { viewModel.deleteAccount() },
             onDismiss = { confirmDelete = false },
+        )
+    }
+
+    pendingDelete?.let { med ->
+        DeleteMedicationDialog(
+            name = med.name,
+            onConfirm = {
+                viewModel.deleteMedication(med.id)
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null },
         )
     }
 }
@@ -290,7 +304,11 @@ private fun UsageCard(state: ProfileState) {
 }
 
 @Composable
-private fun MedicationsCard(state: ProfileState, onEdit: (String) -> Unit) {
+private fun MedicationsCard(
+    state: ProfileState,
+    onEdit: (String) -> Unit,
+    onDelete: (MedicationEntity) -> Unit,
+) {
     val c = LocalDoseColors.current
 
     SectionCard(title = "Your medications") {
@@ -334,6 +352,15 @@ private fun MedicationsCard(state: ProfileState, onEdit: (String) -> Unit) {
                     }
                     if (!med.isActive) {
                         Text("Paused", style = MaterialTheme.typography.labelLarge, color = c.skipped)
+                    }
+                    // Sits outside the row's edit click; IconButton consumes its own tap so
+                    // deleting never doubles as an accidental edit.
+                    IconButton(onClick = { onDelete(med) }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete ${med.name}",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
 
@@ -453,6 +480,34 @@ private fun DeleteAccountDialog(busy: Boolean, onConfirm: () -> Unit, onDismiss:
         },
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") }
+        },
+    )
+}
+
+/**
+ * Confirmation for deleting a single medication.
+ *
+ * A plain confirm/cancel — no typed word. Unlike deleting the whole account, this removes
+ * one medicine, and the extra tap of a dialog is enough friction for something a stray
+ * touch shouldn't do. It still names what goes with it, because the cascade to schedules
+ * and dose history is not obvious.
+ */
+@Composable
+private fun DeleteMedicationDialog(name: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("Delete ${name.replaceFirstChar { it.uppercase() }}?") },
+        text = {
+            Text("This removes the medication along with its schedules and dose history. This cannot be undone.")
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
 }

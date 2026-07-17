@@ -1,6 +1,12 @@
 package com.drugme.app.ui.onboarding
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -109,6 +115,23 @@ private fun Bullet(text: String) {
 
 @Composable
 private fun RemindersStep(onNext: () -> Unit) {
+    val context = LocalContext.current
+
+    // The system permission dialog is requested from here — right after the rationale above,
+    // not blindly at app launch where it would surface over the disclaimer. We advance
+    // whether the user grants or denies: denial is survivable (doses are still tracked), so
+    // it must not trap them on this screen.
+    val requestPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { _ -> onNext() }
+
+    fun continueOn() {
+        val needsRequest = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needsRequest) requestPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else onNext()
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
@@ -123,7 +146,7 @@ private fun RemindersStep(onNext: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
         )
         Spacer(Modifier.height(20.dp))
-        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
+        Button(onClick = ::continueOn, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
     }
 }
 
