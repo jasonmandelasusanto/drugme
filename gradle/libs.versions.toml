@@ -20,7 +20,11 @@ work = "2.11.2"
 datastore = "1.2.1"
 credentials = "1.6.0"
 googleid = "1.2.0"
-coil = "3.5.0"
+# Pinned to 3.4.0: coil3 3.5.0 requires kotlin-stdlib 2.4.0, and the Kotlin 2.2.21
+# compiler here only tolerates metadata one minor ahead (2.3.x). 3.4.0 wants 2.3.10, which
+# is fine. Bumping this means bumping Kotlin, KSP, the Compose plugin and re-checking Hilt
+# — do those together or not at all.
+coil = "3.4.0"
 tink = "1.23.0"
 bouncycastle = "1.85"
 kotlinxSerialization = "1.11.0"
