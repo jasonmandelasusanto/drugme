@@ -64,9 +64,12 @@ class AccountDeleter @Inject constructor(
             medicationDao.deleteAll()
         }
 
-        vault.forget()
-        auth.signOut()
         Log.i(TAG, "Local data cleared")
+        vault.forget()
+        // Ends on a Unit-returning call deliberately: runCatching infers its type from the
+        // last expression, and android.util.Log.i() returns an Int — leaving the log here
+        // would make this Result<Int> and break the declared Result<Unit>.
+        auth.signOut()
     }.onFailure {
         Log.e(TAG, "Account deletion failed", it)
     }
