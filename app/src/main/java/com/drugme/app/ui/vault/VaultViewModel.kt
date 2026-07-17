@@ -54,8 +54,22 @@ class VaultViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             auth.authState.collect { user ->
-                val vaultState = vault.refresh(user?.uid)
-                _state.value = _state.value.copy(user = user, vault = vaultState)
+                _state.value = _state.value.copy(user = user)
+                // refresh() pushes its result into VaultManager.state, which is observed
+                // below — so the return value is deliberately ignored here.
+                vault.refresh(user?.uid)
+            }
+        }
+        viewModelScope.launch {
+            // Observe the vault's own state rather than snapshotting it once per auth
+            // change. The vault transitions on its own — setup() unlocks it, unlock()
+            // unlocks it, lock() re-locks it — and none of those go through authState.
+            //
+            // Snapshotting was a real bug: after setup the UI still held NeedsSetup, so
+            // dismissing the recovery code dropped the user straight back onto the
+            // passphrase screen with no way forward except killing the app.
+            vault.state.collect { vaultState ->
+                _state.value = _state.value.copy(vault = vaultState)
             }
         }
         viewModelScope.launch {

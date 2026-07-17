@@ -3,6 +3,7 @@ package com.drugme.app.data.sync
 import com.drugme.app.data.local.entity.MedicationEntity
 import com.drugme.app.data.local.entity.ScheduleEntity
 import com.drugme.app.domain.model.DoseUnit
+import com.drugme.app.domain.model.FoodRelation
 import com.drugme.app.domain.model.ScheduleType
 import com.drugme.app.domain.model.WeekdayMask
 import kotlinx.serialization.Serializable
@@ -29,6 +30,11 @@ data class MedicationPayload(
     val rxcui: String? = null,
     val doseAmount: Double,
     val doseUnit: String,
+    // Defaulted so a payload written by v1 still decodes: an older device's records must
+    // not fail to sync onto a newer one.
+    val foodRelation: String = "ANY",
+    val stockAmount: Double? = null,
+    val refillReminderDays: Int = 7,
     val diseaseId: String? = null,
     val diseaseName: String? = null,
     val notes: String? = null,
@@ -38,7 +44,15 @@ data class MedicationPayload(
     val schedules: List<SchedulePayload> = emptyList(),
 ) {
     companion object {
-        const val SCHEMA_VERSION = 1
+        /**
+         * 2: added foodRelation, stockAmount, refillReminderDays.
+         *
+         * Backward compatible in both directions — every new field has a default, so a v1
+         * payload decodes here, and a v2 payload decodes on a v1 app (which ignores unknown
+         * keys). The number exists so a future breaking change can be detected rather than
+         * guessed at.
+         */
+        const val SCHEMA_VERSION = 2
     }
 }
 
@@ -57,6 +71,12 @@ data class SchedulePayload(
 )
 
 /**
+ * refillNotifiedAt is deliberately not in the payload: whether *this device* has already
+ * shown a low-stock warning is local UI state, not something the user's other phone needs
+ * — and syncing it would suppress the warning on a device that never showed it.
+ */
+
+/**
  * Dose history is deliberately NOT synced in v1.
  *
  * Doses are derivable from a medication's schedule, so syncing them would multiply record
@@ -71,6 +91,9 @@ fun MedicationEntity.toPayload(schedules: List<ScheduleEntity>) = MedicationPayl
     rxcui = rxcui,
     doseAmount = doseAmount,
     doseUnit = doseUnit.name,
+    foodRelation = foodRelation.name,
+    stockAmount = stockAmount,
+    refillReminderDays = refillReminderDays,
     diseaseId = diseaseId,
     diseaseName = diseaseName,
     notes = notes,
@@ -100,6 +123,11 @@ fun MedicationPayload.toEntity() = MedicationEntity(
     // valueOf, so an unknown unit from a newer app version throws loudly here rather than
     // silently defaulting to milligrams on someone's dose.
     doseUnit = DoseUnit.valueOf(doseUnit),
+    // Unknown food relations fall back to ANY rather than throwing: unlike a dose unit,
+    // getting this wrong is an inconvenience, not a dosing error.
+    foodRelation = runCatching { FoodRelation.valueOf(foodRelation) }.getOrDefault(FoodRelation.ANY),
+    stockAmount = stockAmount,
+    refillReminderDays = refillReminderDays,
     diseaseId = diseaseId,
     diseaseName = diseaseName,
     notes = notes,

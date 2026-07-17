@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Dark counterparts. Android picks this folder automatically when the system is in
+      dark mode, so the pre-Compose window matches the app instead of flashing white.
+    -->
+    <!-- Mirrors Neutral10 in Color.kt (the Compose dark background). -->
+    <color name="window_background">#1A1C1E</color>
+    <!-- Mirrors Blue80 — the light-blue primary used on dark surfaces. -->
+    <color name="brand_blue">#A8C8FF</color>
+</resources>

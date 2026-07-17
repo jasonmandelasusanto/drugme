@@ -38,11 +38,15 @@ class SettingsRepository @Inject constructor(
     val catalogLoaded: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_CATALOG_LOADED] ?: false }
 
+    val diseaseCatalogLoaded: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_DISEASE_CATALOG_LOADED] ?: false }
+
     suspend fun setDiscreetNotifications(value: Boolean) = put(KEY_DISCREET, value)
     suspend fun setOnboardingComplete(value: Boolean) = put(KEY_ONBOARDED, value)
     suspend fun setDisclaimerAccepted(value: Boolean) = put(KEY_DISCLAIMER, value)
     suspend fun setBatteryPromptShown(value: Boolean) = put(KEY_BATTERY_PROMPT, value)
     suspend fun setCatalogLoaded(value: Boolean) = put(KEY_CATALOG_LOADED, value)
+    suspend fun setDiseaseCatalogLoaded(value: Boolean) = put(KEY_DISEASE_CATALOG_LOADED, value)
 
     private suspend fun put(key: Preferences.Key<Boolean>, value: Boolean) {
         context.dataStore.edit { it[key] = value }
@@ -54,5 +58,6 @@ class SettingsRepository @Inject constructor(
         val KEY_DISCLAIMER = booleanPreferencesKey("disclaimer_accepted")
         val KEY_BATTERY_PROMPT = booleanPreferencesKey("battery_prompt_shown")
         val KEY_CATALOG_LOADED = booleanPreferencesKey("catalog_loaded")
+        val KEY_DISEASE_CATALOG_LOADED = booleanPreferencesKey("disease_catalog_loaded")
     }
 }

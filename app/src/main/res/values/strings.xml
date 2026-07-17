@@ -12,4 +12,16 @@
     <string name="reminder_title">Time to take %1$s</string>
     <string name="reminder_title_discreet">Medication reminder</string>
     <string name="reminder_body_discreet">Open DrugMe to see your dose</string>
+
+    <string name="notif_channel_refill_name">Refill reminders</string>
+    <string name="notif_channel_refill_desc">Warns you before a medication runs out</string>
+    <string name="refill_title">%1$s is running low</string>
+    <string name="refill_title_discreet">A medication is running low</string>
+    <string name="refill_body_now">You have run out. Time to refill.</string>
+    <string name="refill_body_tomorrow">You will run out tomorrow.</string>
+    <string name="refill_body_days">About %1$d days left.</string>
+
+    <string name="greeting">Hello, %1$s</string>
+    <string name="greeting_anon">Hello</string>
+    <string name="greeting_question">Have you taken your drugs?</string>
 </resources>

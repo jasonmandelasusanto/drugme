@@ -9,6 +9,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import android.util.Log
 import com.drugme.app.data.repo.DoseRepository
+import com.drugme.app.data.repo.MedicationRepository
+import com.drugme.app.notify.DoseNotifier
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
@@ -35,6 +37,8 @@ class RearmWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val doseRepository: DoseRepository,
+    private val medicationRepository: MedicationRepository,
+    private val notifier: DoseNotifier,
     private val scheduler: DoseAlarmScheduler,
 ) : CoroutineWorker(context, params) {
 
@@ -42,11 +46,40 @@ class RearmWorker @AssistedInject constructor(
         val created = doseRepository.materializeWindow()
         val missed = doseRepository.markOverdueAsMissed()
         scheduler.rescheduleNext()
-        Log.i(TAG, "Heal pass: generated=$created markedMissed=${missed.size}")
+
+        // Refill checks ride along on the existing daily pass rather than adding a second
+        // worker: the schedule simulation is arithmetic over a handful of medications, and
+        // one scheduled job is one fewer thing an OEM battery manager can decide to kill.
+        val refills = checkRefills()
+
+        Log.i(TAG, "Heal pass: generated=$created markedMissed=${missed.size} refillWarnings=$refills")
         Result.success()
     } catch (t: Throwable) {
         Log.e(TAG, "Heal pass failed", t)
         Result.retry()
+    }
+
+    /**
+     * Warns about medications about to run out.
+     *
+     * Failures here are swallowed: a refill warning is a convenience, and it must never
+     * cause the worker to retry and thereby delay the alarm re-arming that is the whole
+     * reason this job exists.
+     */
+    private suspend fun checkRefills(): Int = runCatching {
+        val due = medicationRepository.dueForRefillWarning()
+        for ((item, forecast) in due) {
+            notifier.notifyRefill(
+                medicationName = item.medication.name,
+                daysRemaining = forecast.daysRemaining ?: 0,
+                runOutDate = forecast.runOutDate ?: continue,
+            )
+            medicationRepository.markRefillNotified(item.medication.id)
+        }
+        due.size
+    }.getOrElse {
+        Log.e(TAG, "Refill check failed", it)
+        0
     }
 
     companion object {

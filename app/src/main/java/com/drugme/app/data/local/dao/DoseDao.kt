@@ -33,6 +33,10 @@ interface DoseDao {
         """
         SELECT d.*, m.id AS med_id, m.name AS med_name, m.rxcui AS med_rxcui,
                m.doseAmount AS med_doseAmount, m.doseUnit AS med_doseUnit,
+               m.foodRelation AS med_foodRelation,
+               m.stockAmount AS med_stockAmount,
+               m.refillReminderDays AS med_refillReminderDays,
+               m.refillNotifiedAt AS med_refillNotifiedAt,
                m.diseaseId AS med_diseaseId, m.diseaseName AS med_diseaseName,
                m.notes AS med_notes, m.isActive AS med_isActive,
                m.createdAt AS med_createdAt, m.updatedAt AS med_updatedAt
@@ -49,6 +53,10 @@ interface DoseDao {
         """
         SELECT d.*, m.id AS med_id, m.name AS med_name, m.rxcui AS med_rxcui,
                m.doseAmount AS med_doseAmount, m.doseUnit AS med_doseUnit,
+               m.foodRelation AS med_foodRelation,
+               m.stockAmount AS med_stockAmount,
+               m.refillReminderDays AS med_refillReminderDays,
+               m.refillNotifiedAt AS med_refillNotifiedAt,
                m.diseaseId AS med_diseaseId, m.diseaseName AS med_diseaseName,
                m.notes AS med_notes, m.isActive AS med_isActive,
                m.createdAt AS med_createdAt, m.updatedAt AS med_updatedAt
@@ -86,6 +94,9 @@ interface DoseDao {
     )
     suspend fun getOverdue(cutoffMillis: Long): List<DoseEntity>
 
+    @Query("SELECT * FROM doses WHERE id = :id")
+    suspend fun getById(id: String): DoseEntity?
+
     @Query("UPDATE doses SET status = :status, takenAt = :takenAt, snoozedUntil = NULL WHERE id = :id")
     suspend fun setStatus(id: String, status: String, takenAt: Long?)
 
@@ -119,6 +130,10 @@ interface DoseDao {
         """
         SELECT d.*, m.id AS med_id, m.name AS med_name, m.rxcui AS med_rxcui,
                m.doseAmount AS med_doseAmount, m.doseUnit AS med_doseUnit,
+               m.foodRelation AS med_foodRelation,
+               m.stockAmount AS med_stockAmount,
+               m.refillReminderDays AS med_refillReminderDays,
+               m.refillNotifiedAt AS med_refillNotifiedAt,
                m.diseaseId AS med_diseaseId, m.diseaseName AS med_diseaseName,
                m.notes AS med_notes, m.isActive AS med_isActive,
                m.createdAt AS med_createdAt, m.updatedAt AS med_updatedAt
@@ -133,4 +148,68 @@ interface DoseDao {
     /** Latest generated occurrence for a schedule, so the window extends rather than restarts. */
     @Query("SELECT MAX(scheduledAt) FROM doses WHERE scheduleId = :scheduleId")
     suspend fun getLastGeneratedAt(scheduleId: String): Long?
+
+    // --- Analytics ---------------------------------------------------------
+
+    /**
+     * Lateness of every dose actually taken in a window, in minutes.
+     *
+     * Signed on purpose: negative means taken early, which is a real behaviour and not the
+     * same as being on time. Averaging absolute values would let a habit of "two hours
+     * early, two hours late" report as perfectly punctual.
+     */
+    @Query(
+        """
+        SELECT (takenAt - scheduledAt) / 60000.0 FROM doses
+        WHERE status = 'TAKEN' AND takenAt IS NOT NULL
+          AND localDate BETWEEN :from AND :to
+        """
+    )
+    suspend fun takenDelaysMinutes(from: String, to: String): List<Double>
+
+    /**
+     * Total amount taken per medication, in that medication's own unit.
+     *
+     * Summed from the medication's current doseAmount rather than a per-dose snapshot: the
+     * app has no dose-amount history, so editing a dose retroactively changes past totals.
+     * Acceptable for a personal tracker, and worth knowing when reading these numbers.
+     */
+    @Query(
+        """
+        SELECT m.id AS medicationId, m.name AS name, m.doseUnit AS unit,
+               COUNT(*) AS doseCount, SUM(m.doseAmount) AS totalAmount
+        FROM doses d
+        INNER JOIN medications m ON m.id = d.medicationId
+        WHERE d.status = 'TAKEN'
+        GROUP BY m.id
+        ORDER BY m.name COLLATE NOCASE ASC
+        """
+    )
+    fun observeTotalsAllTime(): Flow<List<MedicationTotal>>
+
+    @Query(
+        """
+        SELECT m.id AS medicationId, m.name AS name, m.doseUnit AS unit,
+               COUNT(*) AS doseCount, SUM(m.doseAmount) AS totalAmount
+        FROM doses d
+        INNER JOIN medications m ON m.id = d.medicationId
+        WHERE d.status = 'TAKEN' AND d.localDate BETWEEN :from AND :to
+        GROUP BY m.id
+        ORDER BY m.name COLLATE NOCASE ASC
+        """
+    )
+    fun observeTotalsBetween(from: String, to: String): Flow<List<MedicationTotal>>
+
+    /** Earliest recorded dose, used to scale "average per day" over the real tracking span. */
+    @Query("SELECT MIN(localDate) FROM doses WHERE status = 'TAKEN'")
+    suspend fun firstTakenDate(): String?
 }
+
+/** Aggregate of one medication's taken doses. [totalAmount] is in that medication's unit. */
+data class MedicationTotal(
+    val medicationId: String,
+    val name: String,
+    val unit: String,
+    val doseCount: Int,
+    val totalAmount: Double,
+)

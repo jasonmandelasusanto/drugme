@@ -16,6 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import com.drugme.app.alarm.DoseAlarmScheduler
 import com.drugme.app.alarm.RearmWorker
 import com.drugme.app.data.repo.DoseRepository
+import com.drugme.app.data.repo.DiseaseCatalogRepository
 import com.drugme.app.data.repo.DrugCatalogRepository
 import com.drugme.app.ui.DrugMeApp
 import com.drugme.app.ui.theme.DrugMeTheme
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var scheduler: DoseAlarmScheduler
     @Inject lateinit var doseRepository: DoseRepository
     @Inject lateinit var catalogRepository: DrugCatalogRepository
+    @Inject lateinit var diseaseCatalogRepository: DiseaseCatalogRepository
 
     private val requestNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -49,7 +51,9 @@ class MainActivity : ComponentActivity() {
             // First-launch import of the bundled catalog. Failure only costs autosuggest,
             // never the ability to add a medication by hand.
             runCatching { catalogRepository.ensureLoaded() }
-                .onFailure { Log.e(TAG, "Catalog load failed; autosuggest unavailable", it) }
+                .onFailure { Log.e(TAG, "Drug catalog load failed; autosuggest unavailable", it) }
+            runCatching { diseaseCatalogRepository.ensureLoaded() }
+                .onFailure { Log.e(TAG, "Condition catalog load failed; suggestions unavailable", it) }
         }
 
         setContent {

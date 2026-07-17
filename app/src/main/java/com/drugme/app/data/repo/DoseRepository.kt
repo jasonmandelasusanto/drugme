@@ -1,7 +1,11 @@
 package com.drugme.app.data.repo
 
+import androidx.room.withTransaction
+import com.drugme.app.data.local.DrugMeDatabase
 import com.drugme.app.data.local.dao.DoseDao
 import com.drugme.app.data.local.dao.DoseWithMedication
+import com.drugme.app.data.local.dao.MedicationDao
+import com.drugme.app.data.local.dao.MedicationTotal
 import com.drugme.app.data.local.dao.ScheduleDao
 import com.drugme.app.data.local.entity.DoseEntity
 import com.drugme.app.domain.model.DoseStatus
@@ -17,7 +21,9 @@ import javax.inject.Singleton
 
 @Singleton
 class DoseRepository @Inject constructor(
+    private val db: DrugMeDatabase,
     private val doseDao: DoseDao,
+    private val medicationDao: MedicationDao,
     private val scheduleDao: ScheduleDao,
     private val generator: DoseOccurrenceGenerator,
     private val clock: Clock,
@@ -82,12 +88,59 @@ class DoseRepository @Inject constructor(
     suspend fun getNextPending(after: Instant = clock.instant()): DoseEntity? =
         doseDao.getNextPending(after.toEpochMilli())
 
-    suspend fun markTaken(doseId: String) {
-        doseDao.setStatus(doseId, DoseStatus.TAKEN.name, clock.millis())
-    }
+    suspend fun markTaken(doseId: String) = setStatus(doseId, DoseStatus.TAKEN)
 
-    suspend fun markSkipped(doseId: String) {
-        doseDao.setStatus(doseId, DoseStatus.SKIPPED.name, null)
+    suspend fun markSkipped(doseId: String) = setStatus(doseId, DoseStatus.SKIPPED)
+
+    /**
+     * Returns a dose to PENDING, undoing a taken/skipped/missed mark.
+     *
+     * People tap the wrong button, or mark a dose taken and then get interrupted before
+     * actually taking it. Without a way back the record silently diverges from reality —
+     * and an adherence history that can't be corrected is worse than none, because it still
+     * looks authoritative.
+     */
+    suspend fun markPending(doseId: String) = setStatus(doseId, DoseStatus.PENDING)
+
+    /**
+     * Sets a dose's status and keeps stock in step.
+     *
+     * Stock moves on the *transition*, not the destination: going to TAKEN consumes a dose,
+     * leaving TAKEN gives it back. Without that symmetry, undoing a mis-tap would silently
+     * lose stock, and toggling taken/untaken a few times would drain a month's supply on
+     * paper while the real bottle sat untouched.
+     *
+     * Done in one transaction so a crash can't leave the dose marked taken with the stock
+     * unchanged, or vice versa.
+     */
+    suspend fun setStatus(doseId: String, status: DoseStatus) {
+        db.withTransaction {
+            val current = doseDao.getById(doseId) ?: return@withTransaction
+            if (current.status == status) return@withTransaction
+
+            val medication = medicationDao.getMedication(current.medicationId)
+            val perDose = medication?.doseAmount ?: 0.0
+            val wasTaken = current.status == DoseStatus.TAKEN
+            val nowTaken = status == DoseStatus.TAKEN
+
+            doseDao.setStatus(
+                doseId,
+                status.name,
+                takenAt = if (nowTaken) clock.millis() else null,
+            )
+
+            val delta = when {
+                !wasTaken && nowTaken -> -perDose
+                wasTaken && !nowTaken -> +perDose
+                else -> 0.0
+            }
+            if (delta != 0.0 && medication != null) {
+                medicationDao.adjustStock(medication.id, delta, clock.millis())
+                // Stock went up, so a previously-sent low-stock warning may no longer
+                // apply; let it fire again if the level drops back.
+                if (delta > 0) medicationDao.clearRefillNotified(medication.id)
+            }
+        }
     }
 
     suspend fun snooze(doseId: String, by: Duration = SNOOZE): Instant {
@@ -115,6 +168,20 @@ class DoseRepository @Inject constructor(
 
     suspend fun countBetween(status: DoseStatus, from: LocalDate, to: LocalDate): Int =
         doseDao.countByStatusBetween(status.name, from.toString(), to.toString())
+
+    // --- analytics ---
+
+    /** Signed lateness in minutes for every dose taken in the window; negative = early. */
+    suspend fun takenDelays(from: LocalDate, to: LocalDate): List<Double> =
+        doseDao.takenDelaysMinutes(from.toString(), to.toString())
+
+    fun observeTotalsAllTime(): Flow<List<MedicationTotal>> = doseDao.observeTotalsAllTime()
+
+    fun observeTotalsBetween(from: LocalDate, to: LocalDate): Flow<List<MedicationTotal>> =
+        doseDao.observeTotalsBetween(from.toString(), to.toString())
+
+    /** Date of the first dose ever taken, used to scale "average per day" honestly. */
+    suspend fun firstTakenDate(): String? = doseDao.firstTakenDate()
 
     companion object {
         /**

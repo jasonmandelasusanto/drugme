@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.drugme.app.data.local.entity.MedicationEntity
 import com.drugme.app.data.local.entity.ScheduleEntity
+import com.drugme.app.data.repo.DiseaseCatalogRepository
 import com.drugme.app.data.repo.DrugCatalogRepository
 import com.drugme.app.data.repo.DrugSuggestion
 import com.drugme.app.data.repo.MedicationRepository
 import com.drugme.app.domain.model.DiseaseRef
 import com.drugme.app.domain.model.DoseUnit
+import com.drugme.app.domain.model.FoodRelation
 import com.drugme.app.domain.model.ScheduleType
 import com.drugme.app.domain.model.WeekdayMask
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,25 +31,38 @@ import javax.inject.Inject
 
 data class AddMedicationState(
     val id: String? = null,
+
+    // --- drug ---
     val name: String = "",
     val rxcui: String? = null,
-    val suggestions: List<DrugSuggestion> = emptyList(),
-    val showSuggestions: Boolean = false,
+    val drugSuggestions: List<DrugSuggestion> = emptyList(),
+    val showDrugSuggestions: Boolean = false,
 
-    /** Indications offered once a catalog drug is picked. Empty for free-text entries. */
-    val availableDiseases: List<DiseaseRef> = emptyList(),
+    // --- condition ---
+    // The user's own statement, typed and searched independently. Deliberately NOT derived
+    // from the chosen drug — see MedicationEntity.diseaseId.
+    val diseaseQuery: String = "",
+    val diseaseSuggestions: List<DiseaseRef> = emptyList(),
+    val showDiseaseSuggestions: Boolean = false,
     val selectedDisease: DiseaseRef? = null,
 
+    // --- dose ---
     val doseAmount: String = "1",
     val doseUnit: DoseUnit = DoseUnit.MG,
+    val foodRelation: FoodRelation = FoodRelation.ANY,
 
+    // --- schedule ---
     val scheduleType: ScheduleType = ScheduleType.TIMES_PER_DAY,
     val timesOfDay: List<LocalTime> = listOf(LocalTime.of(8, 0)),
     val weekdays: WeekdayMask = WeekdayMask.EVERY_DAY,
     val intervalDays: Int = 2,
-
     val startDate: LocalDate = LocalDate.now(),
     val endDate: LocalDate? = null,
+
+    // --- stock ---
+    val trackStock: Boolean = false,
+    val stockAmount: String = "",
+    val refillReminderDays: Int = 7,
 
     val notes: String = "",
     val saving: Boolean = false,
@@ -55,71 +70,87 @@ data class AddMedicationState(
     val error: String? = null,
 ) {
     val doseAmountValue: Double? get() = doseAmount.replace(',', '.').toDoubleOrNull()
+    val stockAmountValue: Double? get() = stockAmount.replace(',', '.').toDoubleOrNull()
 
-    /**
-     * Validation gate for the save button. Kept as derived state rather than checked in
-     * save() so the button reflects it live.
-     */
     val canSave: Boolean
         get() = name.isNotBlank() &&
             (doseAmountValue?.let { it > 0 } == true) &&
             timesOfDay.isNotEmpty() &&
             (scheduleType != ScheduleType.DAYS_OF_WEEK || !weekdays.isEmpty) &&
             (scheduleType != ScheduleType.INTERVAL_DAYS || intervalDays >= 1) &&
-            (endDate == null || !endDate.isBefore(startDate))
+            (endDate == null || !endDate.isBefore(startDate)) &&
+            (!trackStock || (stockAmountValue?.let { it >= 0 } == true))
 }
 
 @HiltViewModel
 class AddMedicationViewModel @Inject constructor(
     private val medicationRepository: MedicationRepository,
-    private val catalogRepository: DrugCatalogRepository,
+    private val drugCatalog: DrugCatalogRepository,
+    private val diseaseCatalog: DiseaseCatalogRepository,
     private val clock: Clock,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AddMedicationState(startDate = LocalDate.now(clock)))
     val state: StateFlow<AddMedicationState> = _state.asStateFlow()
 
-    private val queryFlow = MutableStateFlow("")
+    private val drugQuery = MutableStateFlow("")
+    private val diseaseQueryFlow = MutableStateFlow("")
 
     init {
-        observeQuery()
+        observeDrugQuery()
+        observeDiseaseQuery()
     }
 
     @OptIn(FlowPreview::class)
-    private fun observeQuery() {
+    private fun observeDrugQuery() {
         viewModelScope.launch {
-            queryFlow
-                .debounce(180) // A catalog query per keystroke would thrash SQLite for results nobody reads.
+            drugQuery
+                .debounce(180) // A catalog query per keystroke thrashes SQLite for results nobody reads.
                 .distinctUntilChanged()
-                .map { q -> if (q.length < 2) emptyList() else catalogRepository.search(q, limit = 12) }
+                .map { q -> if (q.length < 2) emptyList() else drugCatalog.search(q, limit = 12) }
                 .collect { results ->
                     _state.value = _state.value.copy(
-                        suggestions = results,
-                        showSuggestions = results.isNotEmpty(),
+                        drugSuggestions = results,
+                        showDrugSuggestions = results.isNotEmpty(),
                     )
                 }
         }
     }
 
-    /** Loads an existing medication for editing. */
+    @OptIn(FlowPreview::class)
+    private fun observeDiseaseQuery() {
+        viewModelScope.launch {
+            diseaseQueryFlow
+                .debounce(180)
+                .distinctUntilChanged()
+                .map { q -> if (q.length < 2) emptyList() else diseaseCatalog.search(q, limit = 12) }
+                .collect { results ->
+                    _state.value = _state.value.copy(
+                        diseaseSuggestions = results,
+                        showDiseaseSuggestions = results.isNotEmpty(),
+                    )
+                }
+        }
+    }
+
     fun load(medicationId: String) {
         viewModelScope.launch {
             val existing = medicationRepository.getById(medicationId) ?: return@launch
             val med = existing.medication
             val schedule = existing.schedules.firstOrNull()
 
-            val diseases = med.rxcui?.let { catalogRepository.getByRxcui(it)?.diseases } ?: emptyList()
-
             _state.value = _state.value.copy(
                 id = med.id,
                 name = med.name,
                 rxcui = med.rxcui,
-                availableDiseases = diseases,
-                selectedDisease = med.diseaseId?.let { id ->
-                    DiseaseRef(id, med.diseaseName ?: "")
-                },
+                selectedDisease = med.diseaseId?.let { DiseaseRef(it, med.diseaseName.orEmpty()) },
+                diseaseQuery = med.diseaseName.orEmpty(),
                 doseAmount = formatAmount(med.doseAmount),
                 doseUnit = med.doseUnit,
+                foodRelation = med.foodRelation,
+                trackStock = med.stockAmount != null,
+                stockAmount = med.stockAmount?.let(::formatAmount).orEmpty(),
+                refillReminderDays = med.refillReminderDays,
                 notes = med.notes.orEmpty(),
                 scheduleType = schedule?.type ?: ScheduleType.TIMES_PER_DAY,
                 timesOfDay = schedule?.timesOfDay ?: listOf(LocalTime.of(8, 0)),
@@ -131,6 +162,8 @@ class AddMedicationViewModel @Inject constructor(
         }
     }
 
+    // --- drug ---
+
     fun onNameChange(value: String) {
         // Typing after picking a catalog entry detaches the rxcui: the stored concept must
         // never disagree with the name on screen.
@@ -138,41 +171,85 @@ class AddMedicationViewModel @Inject constructor(
             name = value,
             rxcui = if (value != _state.value.name) null else _state.value.rxcui,
         )
-        queryFlow.value = value
+        drugQuery.value = value
     }
 
-    fun onSuggestionPicked(suggestion: DrugSuggestion) {
+    fun onDrugPicked(suggestion: DrugSuggestion) {
+        // Note what does NOT happen here: the drug's RxNorm indications are not used to
+        // guess the user's condition. The condition is their own statement.
         _state.value = _state.value.copy(
             name = suggestion.name,
             rxcui = suggestion.rxcui,
-            availableDiseases = suggestion.diseases,
-            // Preselect only when unambiguous. Guessing among several indications would
-            // put a condition on the user's record that they never chose.
-            selectedDisease = suggestion.diseases.singleOrNull(),
-            suggestions = emptyList(),
-            showSuggestions = false,
+            drugSuggestions = emptyList(),
+            showDrugSuggestions = false,
         )
-        queryFlow.value = suggestion.name
+        drugQuery.value = suggestion.name
     }
 
-    fun dismissSuggestions() {
-        _state.value = _state.value.copy(showSuggestions = false)
+    fun dismissDrugSuggestions() {
+        _state.value = _state.value.copy(showDrugSuggestions = false)
     }
 
-    fun onDiseaseSelected(disease: DiseaseRef?) {
-        _state.value = _state.value.copy(selectedDisease = disease)
+    // --- condition ---
+
+    fun onDiseaseQueryChange(value: String) {
+        _state.value = _state.value.copy(
+            diseaseQuery = value,
+            // Editing the text detaches the selection, so a stored MeSH id can't drift away
+            // from the words on screen.
+            selectedDisease = if (value != _state.value.selectedDisease?.name) null else _state.value.selectedDisease,
+        )
+        diseaseQueryFlow.value = value
     }
+
+    fun onDiseasePicked(disease: DiseaseRef) {
+        _state.value = _state.value.copy(
+            selectedDisease = disease,
+            diseaseQuery = disease.name,
+            diseaseSuggestions = emptyList(),
+            showDiseaseSuggestions = false,
+        )
+        diseaseQueryFlow.value = disease.name
+    }
+
+    fun clearDisease() {
+        _state.value = _state.value.copy(selectedDisease = null, diseaseQuery = "", showDiseaseSuggestions = false)
+        diseaseQueryFlow.value = ""
+    }
+
+    fun dismissDiseaseSuggestions() {
+        _state.value = _state.value.copy(showDiseaseSuggestions = false)
+    }
+
+    // --- dose ---
 
     fun onDoseAmountChange(value: String) {
-        // Permit only digits and one separator so the field can't hold something
-        // unparseable by the time save runs.
-        val cleaned = value.filter { it.isDigit() || it == '.' || it == ',' }
-        _state.value = _state.value.copy(doseAmount = cleaned)
+        _state.value = _state.value.copy(doseAmount = value.filter { it.isDigit() || it == '.' || it == ',' })
     }
 
     fun onDoseUnitChange(unit: DoseUnit) {
         _state.value = _state.value.copy(doseUnit = unit)
     }
+
+    fun onFoodRelationChange(value: FoodRelation) {
+        _state.value = _state.value.copy(foodRelation = value)
+    }
+
+    // --- stock ---
+
+    fun onTrackStockChange(enabled: Boolean) {
+        _state.value = _state.value.copy(trackStock = enabled)
+    }
+
+    fun onStockAmountChange(value: String) {
+        _state.value = _state.value.copy(stockAmount = value.filter { it.isDigit() || it == '.' || it == ',' })
+    }
+
+    fun onRefillDaysChange(days: Int) {
+        _state.value = _state.value.copy(refillReminderDays = days.coerceIn(1, 90))
+    }
+
+    // --- schedule ---
 
     fun onScheduleTypeChange(type: ScheduleType) {
         _state.value = _state.value.copy(scheduleType = type)
@@ -186,15 +263,13 @@ class AddMedicationViewModel @Inject constructor(
 
     fun onAddTime() {
         val times = _state.value.timesOfDay
-        // Offer a sensible next slot rather than a duplicate of the last one, which the
-        // generator would collapse anyway.
         val next = (times.maxOrNull() ?: LocalTime.of(8, 0)).plusHours(4)
         _state.value = _state.value.copy(timesOfDay = (times + next).distinct().sorted())
     }
 
     fun onRemoveTime(index: Int) {
         val times = _state.value.timesOfDay.toMutableList()
-        if (times.size <= 1) return // A schedule with no times generates no reminders at all.
+        if (times.size <= 1) return // A schedule with no times produces no reminders at all.
         times.removeAt(index)
         _state.value = _state.value.copy(timesOfDay = times)
     }
@@ -212,7 +287,6 @@ class AddMedicationViewModel @Inject constructor(
         val s = _state.value
         _state.value = s.copy(
             startDate = date,
-            // Keep the "until" date from silently preceding the start.
             endDate = s.endDate?.takeIf { !it.isBefore(date) },
         )
     }
@@ -243,6 +317,12 @@ class AddMedicationViewModel @Inject constructor(
                     rxcui = s.rxcui,
                     doseAmount = amount,
                     doseUnit = s.doseUnit,
+                    foodRelation = s.foodRelation,
+                    stockAmount = if (s.trackStock) s.stockAmountValue else null,
+                    refillReminderDays = s.refillReminderDays,
+                    // Editing keeps any existing warning flag unless stock tracking was
+                    // turned off, in which case it is meaningless.
+                    refillNotifiedAt = if (s.trackStock) existing?.medication?.refillNotifiedAt else null,
                     diseaseId = s.selectedDisease?.id,
                     diseaseName = s.selectedDisease?.name,
                     notes = s.notes.trim().ifBlank { null },
@@ -252,8 +332,8 @@ class AddMedicationViewModel @Inject constructor(
                 )
 
                 val schedule = ScheduleEntity(
-                    // Reuse the schedule id when editing so its existing doses are updated
-                    // in place rather than orphaned.
+                    // Reuse the schedule id when editing so its doses are updated in place
+                    // rather than orphaned.
                     id = existing?.schedules?.firstOrNull()?.id ?: UUID.randomUUID().toString(),
                     medicationId = medId,
                     type = s.scheduleType,

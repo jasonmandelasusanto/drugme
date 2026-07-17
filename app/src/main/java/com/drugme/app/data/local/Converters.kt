@@ -3,6 +3,7 @@ package com.drugme.app.data.local
 import androidx.room.TypeConverter
 import com.drugme.app.domain.model.DoseStatus
 import com.drugme.app.domain.model.DoseUnit
+import com.drugme.app.domain.model.FoodRelation
 import com.drugme.app.domain.model.ScheduleType
 import com.drugme.app.domain.model.WeekdayMask
 import java.time.Instant
@@ -50,6 +51,16 @@ class Converters {
 
     @TypeConverter
     fun stringToDoseUnit(value: String?): DoseUnit? = value?.let { DoseUnit.valueOf(it) }
+
+    @TypeConverter
+    fun foodRelationToString(value: FoodRelation?): String? = value?.name
+
+    @TypeConverter
+    fun stringToFoodRelation(value: String?): FoodRelation? = value?.let {
+        // Tolerate an unknown value rather than crashing: a row written by a newer version
+        // must not make the app unopenable on an older one.
+        runCatching { FoodRelation.valueOf(it) }.getOrDefault(FoodRelation.ANY)
+    }
 
     @TypeConverter
     fun scheduleTypeToString(value: ScheduleType?): String? = value?.name

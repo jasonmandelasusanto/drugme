@@ -20,6 +20,7 @@ work = "2.11.2"
 datastore = "1.2.1"
 credentials = "1.6.0"
 googleid = "1.2.0"
+coil = "3.5.0"
 tink = "1.23.0"
 bouncycastle = "1.85"
 kotlinxSerialization = "1.11.0"
@@ -29,6 +30,8 @@ junit = "4.13.2"
 androidxTestJunit = "1.3.0"
 espresso = "3.7.0"
 mockk = "1.14.11"
+robolectric = "4.16.1"
+androidxTestCore = "1.7.0"
 turbine = "1.2.1"
 
 [libraries]
@@ -71,6 +74,9 @@ firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "fir
 firebase-auth = { module = "com.google.firebase:firebase-auth" }
 firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
 
+# Loads the Google profile picture on the profile screen.
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 tink-android = { module = "com.google.crypto.tink:tink-android", version.ref = "tink" }
 bouncycastle = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
 
@@ -86,6 +92,11 @@ junit = { module = "junit:junit", version.ref = "junit" }
 androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestJunit" }
 androidx-test-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+# Runs Android + Room tests on the JVM, so migration and DAO behaviour is covered in CI
+# without paying for an emulator.
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestCore" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }

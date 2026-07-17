@@ -3,9 +3,11 @@ package com.drugme.app.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.drugme.app.alarm.DoseAlarmScheduler
+import com.drugme.app.data.auth.AuthRepository
 import com.drugme.app.data.local.dao.DoseWithMedication
 import com.drugme.app.data.repo.DoseRepository
 import com.drugme.app.data.repo.MedicationRepository
+import com.drugme.app.domain.model.DoseStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +29,8 @@ data class HomeState(
     val hasMedications: Boolean = false,
     val exactAlarmsBlocked: Boolean = false,
     val loading: Boolean = true,
+    /** First name only — a full "Hello, Jason Mandela Susanto" reads like a form letter. */
+    val displayName: String? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -35,6 +39,7 @@ class HomeViewModel @Inject constructor(
     private val doseRepository: DoseRepository,
     private val medicationRepository: MedicationRepository,
     private val alarmScheduler: DoseAlarmScheduler,
+    private val auth: AuthRepository,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -49,13 +54,15 @@ class HomeViewModel @Inject constructor(
             medicationRepository.observeActive().map { it.isNotEmpty() },
             selectedDate,
             exactAlarmsBlocked,
-        ) { doses, hasMeds, date, blocked ->
+            auth.authState,
+        ) { doses, hasMeds, date, blocked, user ->
             HomeState(
                 date = date,
                 doses = doses,
                 hasMedications = hasMeds,
                 exactAlarmsBlocked = blocked,
                 loading = false,
+                displayName = user?.displayName?.trim()?.split(' ')?.firstOrNull()?.takeIf { it.isNotBlank() },
             )
         }.stateIn(
             scope = viewModelScope,
@@ -90,6 +97,17 @@ class HomeViewModel @Inject constructor(
 
     fun snooze(doseId: String) = viewModelScope.launch {
         doseRepository.snooze(doseId)
+        alarmScheduler.rescheduleNext()
+    }
+
+    /**
+     * Changes an already-decided dose.
+     *
+     * Re-arms afterwards because moving a dose back to PENDING can make it the next one
+     * due, and the alarm chain has no other way to learn that.
+     */
+    fun setStatus(doseId: String, status: DoseStatus) = viewModelScope.launch {
+        doseRepository.setStatus(doseId, status)
         alarmScheduler.rescheduleNext()
     }
 }

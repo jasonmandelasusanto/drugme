@@ -81,7 +81,22 @@ android {
     }
 
     testOptions {
-        unitTests.isReturnDefaultValues = true
+        unitTests {
+            isReturnDefaultValues = true
+            // Robolectric needs the real android.jar resources rather than the stubbed one,
+            // otherwise Room's SQLite and any resource lookup fail at runtime.
+            isIncludeAndroidResources = true
+        }
+    }
+
+    // MigrationTestHelper reads the exported schema JSON to build the "old" database. Room
+    // writes it to $projectDir/schemas via ksp; it has to be on the test source set's
+    // assets or the helper cannot find it and every migration test fails with a confusing
+    // "Cannot find the schema file" rather than a real result.
+    sourceSets {
+        getByName("test") {
+            assets.srcDirs(files("$projectDir/schemas"))
+        }
     }
 }
 
@@ -128,6 +143,9 @@ dependencies {
     implementation(libs.androidx.credentials.play.services)
     implementation(libs.googleid)
 
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network)
+
     // Crypto: Tink for AEAD, BouncyCastle for Argon2id (pure JVM, no NDK).
     implementation(libs.tink.android)
     implementation(libs.bouncycastle)
@@ -137,6 +155,9 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
     testImplementation(libs.room.testing)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.runner)
 
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso)

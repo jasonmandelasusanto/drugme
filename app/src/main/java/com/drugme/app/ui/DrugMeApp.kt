@@ -81,6 +81,12 @@ fun DrugMeApp(
             onSignOut = viewModel::signOut,
         )
 
-        else -> DrugMeNavHost(onFixExactAlarms = onFixExactAlarms)
+        else -> DrugMeNavHost(
+            onFixExactAlarms = onFixExactAlarms,
+            // Signing out or deleting drops back to the sign-in gate: the `when` above
+            // re-evaluates as soon as authState emits null, so this only has to clear the
+            // local "I chose to skip sign-in" flag.
+            onSignedOut = { skippedSignIn = false },
+        )
     }
 }

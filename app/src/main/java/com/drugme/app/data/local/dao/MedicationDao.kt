@@ -65,6 +65,40 @@ interface MedicationDao {
     @Query("UPDATE medications SET isActive = :active, updatedAt = :now WHERE id = :id")
     suspend fun setActive(id: String, active: Boolean, now: Long)
 
+    @Query("SELECT * FROM medications WHERE id = :id")
+    suspend fun getMedication(id: String): MedicationEntity?
+
+    /**
+     * Adjusts stock by [delta] (negative to consume, positive to give back).
+     *
+     * Clamped at zero: a user can mark more doses taken than their recorded stock covers —
+     * they miscounted, or took some before they started tracking — and a negative stock
+     * would render as "-3 tablets left", which is meaningless.
+     *
+     * The `stockAmount IS NOT NULL` guard keeps this a no-op for medications where the user
+     * never opted into tracking. Without it, taking a dose would silently switch tracking
+     * on at a bogus value.
+     */
+    @Query(
+        """
+        UPDATE medications
+        SET stockAmount = MAX(0, stockAmount + :delta), updatedAt = :now
+        WHERE id = :id AND stockAmount IS NOT NULL
+        """
+    )
+    suspend fun adjustStock(id: String, delta: Double, now: Long)
+
+    @Query("UPDATE medications SET refillNotifiedAt = :at WHERE id = :id")
+    suspend fun setRefillNotifiedAt(id: String, at: Long?)
+
+    /** Clears the warning flag so a future low-stock event can notify again. */
+    @Query("UPDATE medications SET refillNotifiedAt = NULL WHERE id = :id")
+    suspend fun clearRefillNotified(id: String)
+
     @Query("DELETE FROM medications WHERE id = :id")
     suspend fun delete(id: String)
+
+    /** Wipes every medication. Cascades to schedules and doses. Used only by account deletion. */
+    @Query("DELETE FROM medications")
+    suspend fun deleteAll()
 }

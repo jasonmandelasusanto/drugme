@@ -34,6 +34,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -55,6 +56,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.drugme.app.domain.model.DiseaseRef
 import com.drugme.app.domain.model.DoseUnit
+import com.drugme.app.domain.model.FoodRelation
 import com.drugme.app.domain.model.ScheduleType
 import com.drugme.app.ui.components.SectionCard
 import java.time.DayOfWeek
@@ -108,9 +110,11 @@ fun AddMedicationScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { DrugNameSection(state, viewModel) }
+            item { ConditionSection(state, viewModel) }
             item { DoseSection(state, viewModel) }
             item { ScheduleSection(state, viewModel) }
             item { DurationSection(state, viewModel) }
+            item { StockSection(state, viewModel) }
             item { NotesSection(state, viewModel) }
             state.error?.let { err ->
                 item {
@@ -134,7 +138,7 @@ private fun DrugNameSection(state: AddMedicationState, vm: AddMedicationViewMode
             modifier = Modifier.fillMaxWidth(),
         )
 
-        if (state.showSuggestions && state.suggestions.isNotEmpty()) {
+        if (state.showDrugSuggestions && state.drugSuggestions.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
             Surface(
                 tonalElevation = 2.dp,
@@ -142,11 +146,11 @@ private fun DrugNameSection(state: AddMedicationState, vm: AddMedicationViewMode
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column {
-                    state.suggestions.take(6).forEach { s ->
+                    state.drugSuggestions.take(6).forEach { s ->
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { vm.onSuggestionPicked(s) }
+                                .clickable { vm.onDrugPicked(s) }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Text(
@@ -173,52 +177,13 @@ private fun DrugNameSection(state: AddMedicationState, vm: AddMedicationViewMode
                         }
                         HorizontalDivider()
                     }
-                    TextButton(onClick = vm::dismissSuggestions, modifier = Modifier.padding(4.dp)) {
+                    TextButton(onClick = vm::dismissDrugSuggestions, modifier = Modifier.padding(4.dp)) {
                         Text("Use what I typed")
                     }
                 }
             }
         }
 
-        if (state.availableDiseases.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            Text("Treating", style = MaterialTheme.typography.titleMedium)
-            Text(
-                // Wording matters: this is reference data from RxNorm/MED-RT, not advice.
-                "Indications listed for this drug in RxNorm. Pick the one that applies to you.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            DiseaseChips(state.availableDiseases, state.selectedDisease, vm::onDiseaseSelected)
-        }
-    }
-}
-
-@Composable
-private fun DiseaseChips(
-    diseases: List<DiseaseRef>,
-    selected: DiseaseRef?,
-    onSelect: (DiseaseRef?) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    // The generator sorts most-specific-first, so the leading few are the recognisable
-    // ones; the rest stay one tap away rather than flooding the form.
-    val shown = if (expanded) diseases else diseases.take(4)
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        shown.forEach { d ->
-            FilterChip(
-                selected = selected?.id == d.id,
-                onClick = { onSelect(if (selected?.id == d.id) null else d) },
-                label = { Text(d.name) },
-            )
-        }
-        if (diseases.size > 4) {
-            TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "Show fewer" else "Show ${diseases.size - 4} more")
-            }
-        }
     }
 }
 
@@ -246,8 +211,162 @@ private fun DoseSection(state: AddMedicationState, vm: AddMedicationViewModel) {
         Text("Unit", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
         UnitChips(state.doseUnit, vm::onDoseUnitChange)
+
+        Spacer(Modifier.height(12.dp))
+        Text("Food", style = MaterialTheme.typography.titleMedium)
+        Text(
+            // Not decorative: levothyroxine needs an empty stomach or it barely absorbs,
+            // NSAIDs on an empty stomach cause bleeding. This ends up on the reminder.
+            "Shown on the reminder when it's time to take it",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(4.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            FoodRelation.entries.forEach { f ->
+                FilterChip(
+                    selected = state.foodRelation == f,
+                    onClick = { vm.onFoodRelationChange(f) },
+                    label = { Text(f.label) },
+                )
+            }
+        }
     }
 }
+
+/**
+ * The condition the user is treating — their own statement, searched independently of the
+ * drug.
+ *
+ * An earlier version derived this from the chosen drug's RxNorm indications. That inverts
+ * the relationship: people know their diagnosis before their prescription, drugs are
+ * prescribed off-label, and vitamins or contraceptives have no listed indication at all.
+ * Anyone in those cases was shown an empty list and told, in effect, that their situation
+ * didn't exist.
+ */
+@Composable
+private fun ConditionSection(state: AddMedicationState, vm: AddMedicationViewModel) {
+    SectionCard(title = "What is it for?") {
+        Text(
+            "Optional. Search for your condition, or leave blank.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = state.diseaseQuery,
+            onValueChange = vm::onDiseaseQueryChange,
+            label = { Text("Condition") },
+            placeholder = { Text("e.g. Diabetes") },
+            singleLine = true,
+            trailingIcon = {
+                if (state.diseaseQuery.isNotEmpty()) {
+                    IconButton(onClick = vm::clearDisease) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear condition")
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        if (state.showDiseaseSuggestions && state.diseaseSuggestions.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Surface(
+                tonalElevation = 2.dp,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column {
+                    state.diseaseSuggestions.take(6).forEach { d ->
+                        Text(
+                            d.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { vm.onDiseasePicked(d) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                        )
+                        HorizontalDivider()
+                    }
+                    TextButton(onClick = vm::dismissDiseaseSuggestions, modifier = Modifier.padding(4.dp)) {
+                        Text("Use what I typed")
+                    }
+                }
+            }
+        }
+
+        state.selectedDisease?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Selected: ${it.name}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+/**
+ * Stock and refill warning.
+ *
+ * Off by default. Most people don't want to count tablets, and a stock field that defaults
+ * to zero is indistinguishable from "I have run out" — which would fire a refill warning at
+ * everyone the moment they added anything.
+ */
+@Composable
+private fun StockSection(state: AddMedicationState, vm: AddMedicationViewModel) {
+    SectionCard(title = "Stock") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Track how much I have left", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Get a warning before you run out",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = state.trackStock, onCheckedChange = vm::onTrackStockChange)
+        }
+
+        if (state.trackStock) {
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = state.stockAmount,
+                    onValueChange = vm::onStockAmountChange,
+                    label = { Text("I have") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.width(130.dp),
+                )
+                Spacer(Modifier.width(12.dp))
+                // Stock is counted in the same unit as the dose, so "2 tablets a day" and
+                // "60 tablets left" divide cleanly. Showing the unit here rather than
+                // offering a second picker keeps that guarantee.
+                Text(
+                    state.doseUnit.format(state.stockAmountValue ?: 0.0).substringAfter(' '),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text("Warn me this many days before running out", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(3, 7, 14, 30).forEach { d ->
+                    FilterChip(
+                        selected = state.refillReminderDays == d,
+                        onClick = { vm.onRefillDaysChange(d) },
+                        label = { Text("$d days") },
+                    )
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun UnitChips(selected: DoseUnit, onSelect: (DoseUnit) -> Unit) {

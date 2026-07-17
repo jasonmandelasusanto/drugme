@@ -8,8 +8,11 @@ import com.drugme.app.data.local.dao.ScheduleDao
 import com.drugme.app.data.local.entity.MedicationEntity
 import com.drugme.app.data.local.entity.ScheduleEntity
 import com.drugme.app.alarm.DoseAlarmScheduler
+import com.drugme.app.domain.schedule.Forecast
+import com.drugme.app.domain.schedule.StockForecast
 import kotlinx.coroutines.flow.Flow
 import java.time.Clock
+import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,6 +23,7 @@ class MedicationRepository @Inject constructor(
     private val scheduleDao: ScheduleDao,
     private val doseRepository: DoseRepository,
     private val alarmScheduler: DoseAlarmScheduler,
+    private val stockForecast: StockForecast,
     private val clock: Clock,
 ) {
 
@@ -70,5 +74,42 @@ class MedicationRepository @Inject constructor(
     suspend fun delete(id: String) {
         medicationDao.delete(id)
         alarmScheduler.rescheduleNext()
+    }
+
+    /** Sets stock directly — a refill, or a correction after counting the packet. */
+    suspend fun setStock(id: String, amount: Double?) {
+        val existing = medicationDao.getMedication(id) ?: return
+        medicationDao.upsert(existing.copy(
+            stockAmount = amount,
+            // Refilling clears the warning so it can fire again next time stock runs low.
+            refillNotifiedAt = null,
+            updatedAt = clock.instant(),
+        ))
+    }
+
+    /** Current run-out forecast for one medication, or null if stock isn't tracked. */
+    suspend fun forecast(id: String): Forecast? {
+        val item = medicationDao.getById(id) ?: return null
+        return stockForecast.forecast(item, LocalDate.now(clock), clock.zone)
+    }
+
+    /**
+     * Medications low enough on stock to warrant a warning, excluding any already warned
+     * about.
+     *
+     * The refillNotifiedAt guard is what stops this nagging daily for the whole week before
+     * a run-out. One warning per low-stock episode; it resets when stock goes back up.
+     */
+    suspend fun dueForRefillWarning(): List<Pair<MedicationWithSchedules, Forecast>> {
+        val today = LocalDate.now(clock)
+        return medicationDao.getActive().mapNotNull { item ->
+            if (item.medication.refillNotifiedAt != null) return@mapNotNull null
+            val f = stockForecast.forecast(item, today, clock.zone) ?: return@mapNotNull null
+            if (f.needsRefillWarning) item to f else null
+        }
+    }
+
+    suspend fun markRefillNotified(id: String) {
+        medicationDao.setRefillNotifiedAt(id, clock.millis())
     }
 }

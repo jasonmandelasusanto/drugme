@@ -10,11 +10,13 @@ import androidx.navigation.navArgument
 import com.drugme.app.ui.addmed.AddMedicationScreen
 import com.drugme.app.ui.history.HistoryScreen
 import com.drugme.app.ui.home.HomeScreen
+import com.drugme.app.ui.profile.ProfileScreen
 
 object Routes {
     const val HOME = "home"
     const val HISTORY = "history"
     const val ADD_MEDICATION = "medication"
+    const val PROFILE = "profile"
 
     /** Edit reuses the add screen; a null id means "new". */
     const val EDIT_MEDICATION = "medication?id={id}"
@@ -24,6 +26,7 @@ object Routes {
 @Composable
 fun DrugMeNavHost(
     onFixExactAlarms: () -> Unit,
+    onSignedOut: () -> Unit,
     navController: NavHostController = rememberNavController(),
 ) {
     NavHost(navController = navController, startDestination = Routes.HOME) {
@@ -33,6 +36,7 @@ fun DrugMeNavHost(
                 onAddMedication = { navController.navigate(Routes.ADD_MEDICATION) },
                 onEditMedication = { id -> navController.navigate(Routes.editMedication(id)) },
                 onOpenHistory = { navController.navigate(Routes.HISTORY) },
+                onOpenProfile = { navController.navigate(Routes.PROFILE) },
                 onFixExactAlarms = onFixExactAlarms,
             )
         }
@@ -55,6 +59,14 @@ fun DrugMeNavHost(
 
         composable(Routes.HISTORY) {
             HistoryScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.PROFILE) {
+            ProfileScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onEditMedication = { id -> navController.navigate(Routes.editMedication(id)) },
+                onSignedOut = onSignedOut,
+            )
         }
     }
 }

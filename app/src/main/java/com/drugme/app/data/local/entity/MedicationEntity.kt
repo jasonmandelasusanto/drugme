@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.drugme.app.domain.model.DoseUnit
+import com.drugme.app.domain.model.FoodRelation
 import java.time.Instant
 
 /**
@@ -31,7 +32,22 @@ data class MedicationEntity(
     val doseAmount: Double,
     val doseUnit: DoseUnit,
 
-    /** MeSH id of the condition being treated, e.g. "D003924". */
+    /**
+     * How this dose relates to eating. Surfaced on the reminder itself, since that is when
+     * the user acts on it.
+     */
+    @ColumnInfo(defaultValue = "ANY")
+    val foodRelation: FoodRelation = FoodRelation.ANY,
+
+    /**
+     * MeSH id of the condition this is taken for, e.g. "D003924".
+     *
+     * The user's own statement, chosen from the disease catalog — NOT derived from the
+     * drug. An earlier design offered conditions from the drug's RxNorm `may_treat` list,
+     * which inverts the relationship: people know what they have before they know what
+     * they take, drugs are prescribed off-label, and vitamins or contraceptives have no
+     * `may_treat` edge at all. Deriving it told those users their situation was invalid.
+     */
     val diseaseId: String? = null,
 
     /**
@@ -39,6 +55,26 @@ data class MedicationEntity(
      * this text is shown to the user and must stay stable across catalog updates.
      */
     val diseaseName: String? = null,
+
+    /**
+     * How much is left, in the same unit as [doseUnit]. Null means the user isn't tracking
+     * stock for this medication — which must stay the default, since most people don't
+     * want to, and a zero would be indistinguishable from "I've run out".
+     */
+    val stockAmount: Double? = null,
+
+    /**
+     * Warn this many days before the stock runs out. Only meaningful when [stockAmount]
+     * is set.
+     *
+     * Default 7: long enough to order a repeat prescription and have it arrive, which is
+     * the actual thing this reminder is for.
+     */
+    @ColumnInfo(defaultValue = "7")
+    val refillReminderDays: Int = 7,
+
+    /** Set when a low-stock warning was last shown, so it isn't repeated every day. */
+    val refillNotifiedAt: Instant? = null,
 
     val notes: String? = null,
 

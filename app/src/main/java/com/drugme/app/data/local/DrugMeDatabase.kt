@@ -3,10 +3,13 @@ package com.drugme.app.data.local
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.drugme.app.data.local.dao.DiseaseCatalogDao
 import com.drugme.app.data.local.dao.DoseDao
 import com.drugme.app.data.local.dao.DrugCatalogDao
 import com.drugme.app.data.local.dao.MedicationDao
 import com.drugme.app.data.local.dao.ScheduleDao
+import com.drugme.app.data.local.entity.DiseaseCatalogEntity
+import com.drugme.app.data.local.entity.DiseaseCatalogFts
 import com.drugme.app.data.local.entity.DoseEntity
 import com.drugme.app.data.local.entity.DrugCatalogEntity
 import com.drugme.app.data.local.entity.DrugCatalogFts
@@ -33,8 +36,10 @@ import com.drugme.app.data.local.entity.ScheduleEntity
         DoseEntity::class,
         DrugCatalogEntity::class,
         DrugCatalogFts::class,
+        DiseaseCatalogEntity::class,
+        DiseaseCatalogFts::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -43,6 +48,7 @@ abstract class DrugMeDatabase : RoomDatabase() {
     abstract fun scheduleDao(): ScheduleDao
     abstract fun doseDao(): DoseDao
     abstract fun drugCatalogDao(): DrugCatalogDao
+    abstract fun diseaseCatalogDao(): DiseaseCatalogDao
 
     companion object {
         const val NAME = "drugme.db"

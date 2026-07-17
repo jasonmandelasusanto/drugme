@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Dark variant of the launch window.
+
+      Without this, the window theme stays Light no matter what the system is set to, and
+      the app opens on a white frame before the first Compose frame draws — a bright flash
+      on a dark phone, which is exactly when it's most jarring. The Compose theme already
+      followed the system; only this pre-Compose window did not.
+    -->
+    <style name="Theme.DrugMe" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <!-- Dark background needs light icons, the inverse of the day theme. -->
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

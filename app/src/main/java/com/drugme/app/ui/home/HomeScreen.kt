@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -26,6 +27,8 @@ import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
@@ -39,6 +42,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import com.drugme.app.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -64,6 +77,7 @@ fun HomeScreen(
     onAddMedication: () -> Unit,
     onEditMedication: (String) -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenProfile: () -> Unit,
     onFixExactAlarms: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
@@ -72,10 +86,23 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("DrugMe") },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(R.drawable.logo),
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp).clip(CircleShape),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("DrugMe")
+                    }
+                },
                 actions = {
                     IconButton(onClick = onOpenHistory) {
                         Icon(Icons.Default.History, contentDescription = "History")
+                    }
+                    IconButton(onClick = onOpenProfile) {
+                        Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
                     }
                 },
             )
@@ -87,6 +114,7 @@ fun HomeScreen(
         },
     ) { inner ->
         Column(Modifier.padding(inner).fillMaxSize()) {
+            Greeting(state.displayName)
             DateBar(
                 date = state.date,
                 onPrev = { viewModel.showDate(state.date.minusDays(1)) },
@@ -112,12 +140,36 @@ fun HomeScreen(
                             onTaken = { viewModel.markTaken(item.dose.id) },
                             onSkip = { viewModel.markSkipped(item.dose.id) },
                             onSnooze = { viewModel.snooze(item.dose.id) },
+                            onSetStatus = { viewModel.setStatus(item.dose.id, it) },
                             onClick = { onEditMedication(item.medication.id) },
                         )
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * "Hello, Jason — have you taken your drugs?"
+ *
+ * Falls back to a plain "Hello" when signed out: sign-in is optional, and a greeting that
+ * only works with an account would quietly punish the people who declined one.
+ */
+@Composable
+private fun Greeting(displayName: String?) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+            displayName?.let { stringResource(R.string.greeting, it) }
+                ?: stringResource(R.string.greeting_anon),
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            stringResource(R.string.greeting_question),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -182,6 +234,7 @@ private fun DoseCard(
     onTaken: () -> Unit,
     onSkip: () -> Unit,
     onSnooze: () -> Unit,
+    onSetStatus: (DoseStatus) -> Unit,
     onClick: () -> Unit,
 ) {
     val doseColors = LocalDoseColors.current
@@ -220,7 +273,8 @@ private fun DoseCard(
                         textDecoration = if (status == DoseStatus.SKIPPED) TextDecoration.LineThrough else null,
                     )
                     Text(
-                        "${time.format(timeFmt)} · ${item.medication.doseUnit.format(item.medication.doseAmount)}",
+                        "${time.format(timeFmt)} · ${item.medication.doseUnit.format(item.medication.doseAmount)}" +
+                            item.medication.foodRelation.notificationSuffix(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -232,12 +286,10 @@ private fun DoseCard(
                         )
                     }
                 }
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = tint,
-                    fontWeight = FontWeight.Medium,
-                )
+                // The status is a menu, not a label. A dose marked by mistake — or marked
+                // taken and then not actually taken — has to be correctable, or the record
+                // silently diverges from reality while still looking authoritative.
+                StatusMenu(current = status, onPick = onSetStatus, tint = tint, label = label)
             }
 
             if (status == DoseStatus.PENDING) {
@@ -259,6 +311,12 @@ private fun EmptyState(onAdd: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(32.dp),
         ) {
+            Image(
+                painter = painterResource(R.drawable.logo),
+                contentDescription = null,
+                modifier = Modifier.size(80.dp).clip(CircleShape),
+            )
+            Spacer(Modifier.height(16.dp))
             Text("No medications yet", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             Text(
@@ -280,5 +338,47 @@ private fun NoDosesToday() {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * Tap the status to change it.
+ *
+ * MISSED is absent on purpose: only the system assigns it, after the grace window. Letting
+ * a user pick it would blur the distinction that keeps adherence honest — skipped is a
+ * decision, missed is not.
+ */
+@Composable
+private fun StatusMenu(
+    current: DoseStatus,
+    onPick: (DoseStatus) -> Unit,
+    tint: androidx.compose.ui.graphics.Color,
+    label: String,
+) {
+    var open by remember { mutableStateOf(false) }
+
+    Box {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = tint,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .clickable { open = true }
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            listOf(
+                DoseStatus.TAKEN to "Taken",
+                DoseStatus.SKIPPED to "Skipped",
+                DoseStatus.PENDING to "Not yet taken",
+            ).forEach { (status, text) ->
+                DropdownMenuItem(
+                    text = { Text(text) },
+                    enabled = status != current,
+                    onClick = { onPick(status); open = false },
+                )
+            }
+        }
     }
 }

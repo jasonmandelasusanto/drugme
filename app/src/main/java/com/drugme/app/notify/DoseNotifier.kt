@@ -20,6 +20,7 @@ import com.drugme.app.data.local.dao.DoseWithMedication
 import com.drugme.app.data.prefs.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
+import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -32,10 +33,35 @@ class DoseNotifier @Inject constructor(
     private val manager = NotificationManagerCompat.from(context)
 
     init {
-        createChannel()
+        createChannels()
     }
 
-    private fun createChannel() {
+    private fun createChannels() {
+        createReminderChannel()
+        createRefillChannel()
+    }
+
+    /**
+     * Refill warnings. DEFAULT importance: informative, not urgent.
+     *
+     * Kept off the reminders channel on purpose — if "you'll run out on Friday" arrives
+     * with the same heads-up and sound as "take your pill now", people learn to swipe both
+     * away, and the one that matters gets dismissed with the one that doesn't.
+     */
+    private fun createRefillChannel() {
+        val channel = NotificationChannel(
+            CHANNEL_REFILL,
+            context.getString(R.string.notif_channel_refill_name),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = context.getString(R.string.notif_channel_refill_desc)
+            enableVibration(false)
+            lockscreenVisibility = NotificationCompat.VISIBILITY_PRIVATE
+        }
+        context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    private fun createReminderChannel() {
         val channel = NotificationChannel(
             CHANNEL_REMINDERS,
             context.getString(R.string.notif_channel_reminders_name),
@@ -65,7 +91,9 @@ class DoseNotifier @Inject constructor(
         val med = item.medication
         val discreet = settings.discreetNotifications.first()
 
-        val doseText = med.doseUnit.format(med.doseAmount)
+        // "500 mg · with food" — the food instruction belongs here because this is the
+        // moment the user acts on it, not buried in the medication's detail screen.
+        val doseText = med.doseUnit.format(med.doseAmount) + med.foodRelation.notificationSuffix()
 
         val builder = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
             .setSmallIcon(R.drawable.ic_notification)
@@ -107,6 +135,48 @@ class DoseNotifier @Inject constructor(
         manager.notify(item.dose.id.hashCode(), builder.build())
     }
 
+    /**
+     * Low-stock warning.
+     *
+     * Deliberately on its own channel at DEFAULT importance, not the reminders channel.
+     * "You'll run out on Friday" is useful; it is not urgent, and firing it with the same
+     * heads-up and sound as "take your pill now" trains people to dismiss both. Separate
+     * channels also let the user silence refill nags without touching dose reminders.
+     */
+    suspend fun notifyRefill(medicationName: String, daysRemaining: Int, runOutDate: LocalDate) {
+        if (!hasPermission()) return
+        val discreet = settings.discreetNotifications.first()
+
+        val title = if (discreet) {
+            context.getString(R.string.refill_title_discreet)
+        } else {
+            context.getString(R.string.refill_title, medicationName)
+        }
+        val body = when {
+            daysRemaining <= 0 -> context.getString(R.string.refill_body_now)
+            daysRemaining == 1 -> context.getString(R.string.refill_body_tomorrow)
+            else -> context.getString(R.string.refill_body_days, daysRemaining)
+        }
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_REFILL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.brand_blue))
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setContentIntent(openAppIntent(medicationName))
+            .setVisibility(
+                // A refill notice names the drug just as a dose reminder does, so it gets
+                // the same lock-screen treatment.
+                if (discreet) NotificationCompat.VISIBILITY_SECRET
+                else NotificationCompat.VISIBILITY_PRIVATE
+            )
+
+        manager.notify(REFILL_ID_BASE + medicationName.hashCode(), builder.build())
+    }
+
     fun dismiss(doseId: String) = manager.cancel(doseId.hashCode())
 
     fun hasPermission(): Boolean =
@@ -144,5 +214,9 @@ class DoseNotifier @Inject constructor(
 
     companion object {
         const val CHANNEL_REMINDERS = "dose_reminders"
+        const val CHANNEL_REFILL = "refill_warnings"
+
+        /** Offset so refill ids can't collide with dose-id hashes. */
+        private const val REFILL_ID_BASE = 900_000
     }
 }
