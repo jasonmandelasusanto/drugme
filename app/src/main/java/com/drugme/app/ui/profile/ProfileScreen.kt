@@ -165,7 +165,10 @@ private fun AccountCard(state: ProfileState) {
                 }
                 if (state.user == null) {
                     Text(
-                        "Your medications are saved on this phone only.",
+                        // Truthful loss framing: local-only data really is gone if the phone
+                        // is. Stated plainly so the choice to back up is informed, not scared.
+                        "Your medications live only on this phone. If you lose or reset it, " +
+                            "they're gone — signing in keeps an encrypted backup only you can open.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

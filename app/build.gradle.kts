@@ -146,6 +146,10 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
+    // App Check. Play Integrity ships in every build; the debug provider is debug-only so it
+    // never reaches release. Which one is installed is chosen per variant in AppCheckInstaller.
+    implementation(libs.firebase.appcheck.playintegrity)
+    debugImplementation(libs.firebase.appcheck.debug)
 
     // Google sign-in goes through Credential Manager; the legacy GoogleSignIn SDK is
     // deprecated. googleid supplies the GetGoogleIdOption request type.

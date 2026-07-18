@@ -88,6 +88,16 @@ class DoseRepository @Inject constructor(
     suspend fun getNextPending(after: Instant = clock.instant()): DoseEntity? =
         doseDao.getNextPending(after.toEpochMilli())
 
+    /**
+     * Every dose due right now and still pending — what the alarm posts reminders for.
+     *
+     * The alarm chain arms one dose, but medications sharing a time all come due together;
+     * notifying the whole due set is what makes every one of them appear rather than just
+     * the armed one.
+     */
+    suspend fun getDuePending(now: Instant = clock.instant()): List<DoseWithMedication> =
+        doseDao.getDuePendingWithMedication(now.toEpochMilli())
+
     suspend fun markTaken(doseId: String) = setStatus(doseId, DoseStatus.TAKEN)
 
     suspend fun markSkipped(doseId: String) = setStatus(doseId, DoseStatus.SKIPPED)

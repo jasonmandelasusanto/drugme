@@ -68,6 +68,36 @@ interface DoseDao {
     suspend fun getWithMedication(id: String): DoseWithMedication?
 
     /**
+     * Every dose currently due and still awaiting action — effective time at or before
+     * [nowMillis].
+     *
+     * This is what the alarm notifies from. The chain arms a single dose, but several
+     * medications can share the same time; firing on only the armed one left the rest
+     * unnotified. Selecting all due-and-pending doses covers simultaneous doses in one shot
+     * and also re-surfaces any that a dropped chain link skipped, before the grace window
+     * ages them to MISSED.
+     */
+    @Transaction
+    @Query(
+        """
+        SELECT d.*, m.id AS med_id, m.name AS med_name, m.rxcui AS med_rxcui,
+               m.doseAmount AS med_doseAmount, m.doseUnit AS med_doseUnit,
+               m.foodRelation AS med_foodRelation,
+               m.stockAmount AS med_stockAmount,
+               m.refillReminderDays AS med_refillReminderDays,
+               m.refillNotifiedAt AS med_refillNotifiedAt,
+               m.diseaseId AS med_diseaseId, m.diseaseName AS med_diseaseName,
+               m.notes AS med_notes, m.isActive AS med_isActive,
+               m.createdAt AS med_createdAt, m.updatedAt AS med_updatedAt
+        FROM doses d
+        INNER JOIN medications m ON m.id = d.medicationId
+        WHERE d.status = 'PENDING' AND COALESCE(d.snoozedUntil, d.scheduledAt) <= :nowMillis
+        ORDER BY COALESCE(d.snoozedUntil, d.scheduledAt) ASC
+        """
+    )
+    suspend fun getDuePendingWithMedication(nowMillis: Long): List<DoseWithMedication>
+
+    /**
      * The earliest dose still awaiting action at or after [afterMillis] — the single dose
      * the next alarm is armed for.
      *

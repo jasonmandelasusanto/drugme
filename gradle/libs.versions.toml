@@ -77,6 +77,11 @@ googleid = { module = "com.google.android.libraries.identity.googleid:googleid",
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-auth = { module = "com.google.firebase:firebase-auth" }
 firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
+# App Check: proves requests come from the genuine app, not a script replaying the public
+# config. Play Integrity in release; the debug provider (debug builds only) uses a registered
+# debug token so local/CI builds still reach Firebase. Versions come from the Firebase BOM.
+firebase-appcheck-playintegrity = { module = "com.google.firebase:firebase-appcheck-playintegrity" }
+firebase-appcheck-debug = { module = "com.google.firebase:firebase-appcheck-debug" }
 
 # Loads the Google profile picture on the profile screen.
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }

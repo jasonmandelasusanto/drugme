@@ -317,10 +317,11 @@ private fun EmptyState(onAdd: () -> Unit) {
                 modifier = Modifier.size(80.dp).clip(CircleShape),
             )
             Spacer(Modifier.height(16.dp))
-            Text("No medications yet", style = MaterialTheme.typography.titleLarge)
+            Text("Build your reminder routine", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Add a medication and DrugMe will remind you when it's time to take it.",
+                "Add your medications, set the times that fit your day, and DrugMe reminds you " +
+                    "when to take each one. It's your routine — you decide how it works.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

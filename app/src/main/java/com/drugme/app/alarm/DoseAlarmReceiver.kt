@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.drugme.app.data.repo.DoseRepository
-import com.drugme.app.domain.model.DoseStatus
 import com.drugme.app.notify.DoseNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -66,17 +65,17 @@ class DoseAlarmReceiver : BroadcastReceiver() {
     private suspend fun handleDoseDue(doseId: String?) {
         doseRepository.markOverdueAsMissed()
 
-        if (doseId == null) return
-        val dose = doseRepository.getWithMedication(doseId) ?: run {
-            Log.w(TAG, "Dose $doseId no longer exists; skipping notification.")
+        // Notify every dose that is due now, not just the one the alarm was armed for. The
+        // chain arms a single dose, but medications sharing a time all fall due together;
+        // firing on only the armed dose is why simultaneous reminders showed just one drug.
+        // getDuePending already filters to PENDING, so anything the user handled between
+        // arming and firing is excluded.
+        val due = doseRepository.getDuePending()
+        if (due.isEmpty()) {
+            Log.i(TAG, "Alarm fired for $doseId but nothing is due; likely already handled.")
             return
         }
-        // The user may have marked this taken from the app between arming and firing.
-        if (dose.dose.status != DoseStatus.PENDING) {
-            Log.i(TAG, "Dose $doseId already ${dose.dose.status}; not notifying.")
-            return
-        }
-        notifier.notifyDose(dose)
+        due.forEach { notifier.notifyDose(it) }
     }
 
     companion object {

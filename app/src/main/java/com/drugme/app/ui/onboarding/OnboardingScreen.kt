@@ -33,6 +33,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -63,6 +64,31 @@ fun OnboardingScreen(onFinished: () -> Unit) {
     }
 }
 
+private const val ONBOARDING_STEPS = 3
+
+/**
+ * Step progress for the onboarding flow.
+ *
+ * Deliberately starts filled, not empty: step 1 shows a third complete, not 0%. Seeing
+ * progress already made is what creates momentum to finish a multi-step setup rather than
+ * abandon it at the first screen.
+ */
+@Composable
+private fun OnboardingProgress(step: Int) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
+        Text(
+            "Step $step of $ONBOARDING_STEPS",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { step.toFloat() / ONBOARDING_STEPS },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
 /**
  * The medical disclaimer.
  *
@@ -78,6 +104,7 @@ private fun DisclaimerStep(onAccept: () -> Unit) {
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
     ) {
+        OnboardingProgress(step = 1)
         Image(
             painter = painterResource(R.drawable.logo),
             contentDescription = null,
@@ -136,6 +163,7 @@ private fun RemindersStep(onNext: () -> Unit) {
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
     ) {
+        OnboardingProgress(step = 2)
         Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(12.dp))
         Text("Reminders", style = MaterialTheme.typography.headlineMedium)
@@ -165,6 +193,7 @@ private fun BatteryStep(context: Context, onFinish: () -> Unit) {
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
     ) {
+        OnboardingProgress(step = 3)
         Icon(Icons.Default.BatteryAlert, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(12.dp))
         Text("Keep reminders working", style = MaterialTheme.typography.headlineMedium)
