@@ -8,8 +8,10 @@ seriously and reviewed personally.
 **Please report privately — do not open a public issue** for anything touching
 authentication, encryption, the sync layer, or user data.
 
-- Email: **jasonmandelasusanto@gmail.com**
-- Use a subject that starts with `SECURITY:` so it isn't missed.
+Use GitHub's private vulnerability reporting: open the **Security** tab of this repository and
+click **Report a vulnerability**. That opens a private advisory visible only to the
+maintainer — no email address required on either side.
+
 - Include: what you found, how to reproduce it, and the impact you think it has. A proof of
   concept helps but isn't required.
 
