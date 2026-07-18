@@ -74,7 +74,10 @@ class SyncEngine @Inject constructor(
         var count = 0
 
         for (item in locals) {
-            val payload = item.medication.toPayload(item.schedules)
+            val payload = item.medication.toPayload(
+                item.schedules,
+                doseRepository.actedDosesForBackup(item.medication.id),
+            )
             val plaintext = json.encodeToString(payload).toByteArray()
 
             val sealed = vault.seal(plaintext, item.medication.id, uid) ?: continue
@@ -139,8 +142,12 @@ class SyncEngine @Inject constructor(
             }
 
             medicationDao.upsert(payload.toEntity())
+            // Replacing schedules cascades away this medication's doses, so restore the
+            // backed-up history right after — before materializeWindow (IGNORE) refills the
+            // future with pending doses that must not clobber a taken/skipped mark.
             scheduleDao.deleteForMedication(payload.id)
             scheduleDao.upsertAll(payload.schedules.map { it.toEntity(payload.id) })
+            doseRepository.restoreDoses(payload.doses.map { it.toEntity(payload.id) })
             applied++
         }
         return applied

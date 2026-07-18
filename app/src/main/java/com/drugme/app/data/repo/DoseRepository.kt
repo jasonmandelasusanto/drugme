@@ -8,6 +8,7 @@ import com.drugme.app.data.local.dao.MedicationDao
 import com.drugme.app.data.local.dao.MedicationTotal
 import com.drugme.app.data.local.dao.ScheduleDao
 import com.drugme.app.data.local.entity.DoseEntity
+import com.drugme.app.data.sync.SyncTrigger
 import com.drugme.app.domain.model.DoseStatus
 import com.drugme.app.domain.schedule.DoseOccurrenceGenerator
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +28,7 @@ class DoseRepository @Inject constructor(
     private val scheduleDao: ScheduleDao,
     private val generator: DoseOccurrenceGenerator,
     private val clock: Clock,
+    private val syncTrigger: SyncTrigger,
 ) {
 
     fun observeForDate(date: LocalDate): Flow<List<DoseWithMedication>> =
@@ -98,6 +100,15 @@ class DoseRepository @Inject constructor(
     suspend fun getDuePending(now: Instant = clock.instant()): List<DoseWithMedication> =
         doseDao.getDuePendingWithMedication(now.toEpochMilli())
 
+    /** Acted-on dose history for one medication — what the backup carries. */
+    suspend fun actedDosesForBackup(medicationId: String): List<DoseEntity> =
+        doseDao.getActedForMedication(medicationId)
+
+    /** Restores dose history from a backup, overwriting regenerated pending doses that collide. */
+    suspend fun restoreDoses(doses: List<DoseEntity>) {
+        if (doses.isNotEmpty()) doseDao.upsertAll(doses)
+    }
+
     suspend fun markTaken(doseId: String) = setStatus(doseId, DoseStatus.TAKEN)
 
     suspend fun markSkipped(doseId: String) = setStatus(doseId, DoseStatus.SKIPPED)
@@ -151,11 +162,16 @@ class DoseRepository @Inject constructor(
                 if (delta > 0) medicationDao.clearRefillNotified(medication.id)
             }
         }
+        // Adherence history is user data too — back it up, or a reinstall loses every
+        // taken/skipped mark. Dose changes don't touch the medication's updatedAt, so this
+        // is the only thing that gets the change uploaded.
+        syncTrigger.requestSync()
     }
 
     suspend fun snooze(doseId: String, by: Duration = SNOOZE): Instant {
         val until = clock.instant().plus(by)
         doseDao.setSnoozed(doseId, until.toEpochMilli())
+        syncTrigger.requestSync()
         return until
     }
 
@@ -173,6 +189,8 @@ class DoseRepository @Inject constructor(
         if (overdue.isEmpty()) return emptyList()
         val ids = overdue.map { it.id }
         doseDao.markMissed(ids)
+        // Missed marks are history too; get them backed up.
+        syncTrigger.requestSync()
         return ids
     }
 

@@ -1,7 +1,9 @@
 package com.drugme.app.data.sync
 
+import com.drugme.app.data.local.entity.DoseEntity
 import com.drugme.app.data.local.entity.MedicationEntity
 import com.drugme.app.data.local.entity.ScheduleEntity
+import com.drugme.app.domain.model.DoseStatus
 import com.drugme.app.domain.model.DoseUnit
 import com.drugme.app.domain.model.FoodRelation
 import com.drugme.app.domain.model.ScheduleType
@@ -42,19 +44,39 @@ data class MedicationPayload(
     val createdAt: Long,
     val updatedAt: Long,
     val schedules: List<SchedulePayload> = emptyList(),
+    val doses: List<DosePayload> = emptyList(),
 ) {
     companion object {
         /**
+         * 3: added doses (taken/skipped/missed/snoozed history).
          * 2: added foodRelation, stockAmount, refillReminderDays.
          *
-         * Backward compatible in both directions — every new field has a default, so a v1
-         * payload decodes here, and a v2 payload decodes on a v1 app (which ignores unknown
-         * keys). The number exists so a future breaking change can be detected rather than
-         * guessed at.
+         * Backward compatible in both directions — every new field has a default, so an older
+         * payload decodes here, and a newer payload decodes on an older app (which ignores
+         * unknown keys). The number exists so a future breaking change can be detected rather
+         * than guessed at.
          */
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
     }
 }
+
+/**
+ * One dose's recorded state, carried inside its medication's blob.
+ *
+ * Only doses that hold real history are worth sending — see the acted-on filter in the DAO.
+ * The scheduleId and scheduledAt are the natural key a restore reconciles against, so a
+ * regenerated pending dose is replaced by its true taken/skipped state rather than duplicated.
+ */
+@Serializable
+data class DosePayload(
+    val id: String,
+    val scheduleId: String,
+    val scheduledAt: Long,
+    val localDate: String,
+    val status: String,
+    val takenAt: Long? = null,
+    val snoozedUntil: Long? = null,
+)
 
 @Serializable
 data class SchedulePayload(
@@ -77,15 +99,19 @@ data class SchedulePayload(
  */
 
 /**
- * Dose history is deliberately NOT synced in v1.
+ * Dose history rides *inside* the medication blob, not in its own collection.
  *
- * Doses are derivable from a medication's schedule, so syncing them would multiply record
- * count (and therefore metadata leakage) by roughly the number of days tracked, in
- * exchange for preserving taken/skipped marks across devices — a poor trade while there is
- * one phone per user. Regenerating locally after a restore is correct and cheap.
+ * Adherence history (what was taken, skipped, missed, and when) is real user data that a
+ * reinstall must not lose — regenerating pending doses is not enough. Bundling it into the
+ * existing per-medication record keeps that promise while adding no new documents, so the
+ * server's metadata surface (document count and timestamps) is unchanged. The cost is a
+ * larger blob; only acted-on doses are sent, which bounds it to actual history.
  */
 
-fun MedicationEntity.toPayload(schedules: List<ScheduleEntity>) = MedicationPayload(
+fun MedicationEntity.toPayload(
+    schedules: List<ScheduleEntity>,
+    doses: List<DoseEntity> = emptyList(),
+) = MedicationPayload(
     id = id,
     name = name,
     rxcui = rxcui,
@@ -113,6 +139,17 @@ fun MedicationEntity.toPayload(schedules: List<ScheduleEntity>) = MedicationPayl
             updatedAt = s.updatedAt.toEpochMilli(),
         )
     },
+    doses = doses.map { it.toDosePayload() },
+)
+
+fun DoseEntity.toDosePayload() = DosePayload(
+    id = id,
+    scheduleId = scheduleId,
+    scheduledAt = scheduledAt.toEpochMilli(),
+    localDate = localDate.toString(),
+    status = status.name,
+    takenAt = takenAt?.toEpochMilli(),
+    snoozedUntil = snoozedUntil?.toEpochMilli(),
 )
 
 fun MedicationPayload.toEntity() = MedicationEntity(
@@ -147,4 +184,17 @@ fun SchedulePayload.toEntity(medicationId: String) = ScheduleEntity(
     endDate = endDate?.let(LocalDate::parse),
     createdAt = Instant.ofEpochMilli(createdAt),
     updatedAt = Instant.ofEpochMilli(updatedAt),
+)
+
+fun DosePayload.toEntity(medicationId: String) = DoseEntity(
+    id = id,
+    medicationId = medicationId,
+    scheduleId = scheduleId,
+    scheduledAt = Instant.ofEpochMilli(scheduledAt),
+    localDate = LocalDate.parse(localDate),
+    // valueOf, not a lenient fallback: an unrecognised status is a bug we want to see, not a
+    // dose silently resurrected to PENDING and re-alarmed.
+    status = DoseStatus.valueOf(status),
+    takenAt = takenAt?.let(Instant::ofEpochMilli),
+    snoozedUntil = snoozedUntil?.let(Instant::ofEpochMilli),
 )

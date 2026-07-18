@@ -28,6 +28,25 @@ interface DoseDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnore(doses: List<DoseEntity>): List<Long>
 
+    /**
+     * Restores doses from a backup, overwriting any that collide.
+     *
+     * REPLACE (not IGNORE) so a synced taken/skipped dose wins over a freshly regenerated
+     * pending one for the same (scheduleId, scheduledAt) — the whole point of restoring
+     * history. Only used by the sync restore path, never by generation.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(doses: List<DoseEntity>)
+
+    /** Doses that carry real history — anything the user acted on, or snoozed. What a backup keeps. */
+    @Query(
+        """
+        SELECT * FROM doses
+        WHERE medicationId = :medicationId AND (status != 'PENDING' OR snoozedUntil IS NOT NULL)
+        """
+    )
+    suspend fun getActedForMedication(medicationId: String): List<DoseEntity>
+
     @Transaction
     @Query(
         """
