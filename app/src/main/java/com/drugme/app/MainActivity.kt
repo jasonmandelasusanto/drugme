@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import com.drugme.app.alarm.DoseAlarmScheduler
 import com.drugme.app.alarm.RearmWorker
+import com.drugme.app.data.sync.SyncWorker
 import com.drugme.app.data.repo.DoseRepository
 import com.drugme.app.data.repo.DiseaseCatalogRepository
 import com.drugme.app.data.repo.DrugCatalogRepository
@@ -30,6 +31,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         RearmWorker.enqueue(this)
+        // Periodic backup safety net, so a push doesn't depend on the user ever unlocking
+        // again (the key is cached, so unlock rarely recurs). Per-change pushes are requested
+        // from MedicationRepository; this catches anything they missed while offline.
+        SyncWorker.enqueuePeriodic(this)
         // POST_NOTIFICATIONS is requested from the onboarding Reminders step, where the
         // rationale is shown, rather than blindly here on launch (which surfaced the system
         // dialog over the disclaimer).
@@ -58,6 +63,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Push any local changes on every foreground: if a per-change push was dropped
+        // (offline, process killed right after an edit), this is the reliable catch-up while
+        // the app is open and the key is available.
+        SyncWorker.enqueueNow(this)
         // Backstop #3 for the alarm chain. Both calls are idempotent, so running them on
         // every foreground is cheap and catches a chain that broke while the app was closed.
         lifecycleScope.launch {

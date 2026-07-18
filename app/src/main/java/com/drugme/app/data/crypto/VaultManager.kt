@@ -142,6 +142,22 @@ class VaultManager @Inject constructor(
     }
 
     /**
+     * Best-effort unlock using the Keystore-cached DEK, with no passphrase prompt.
+     *
+     * For the background sync worker: it must be able to seal and push records without a UI,
+     * and the cache is exactly the key the foreground already proved. No-op if already
+     * unlocked; false if there is no usable cache (nothing was ever unlocked on this install),
+     * in which case the push simply waits for the next real unlock.
+     */
+    suspend fun ensureUnlockedFromCache(): Boolean {
+        if (isUnlocked) return true
+        val cached = dekCache.load() ?: return false
+        dek = cached
+        _state.value = VaultState.Unlocked
+        return true
+    }
+
+    /**
      * Replaces the passphrase.
      *
      * Rewraps the same DEK rather than generating a new one — re-keying would require

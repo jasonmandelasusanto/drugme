@@ -8,6 +8,7 @@ import com.drugme.app.data.local.dao.ScheduleDao
 import com.drugme.app.data.local.entity.MedicationEntity
 import com.drugme.app.data.local.entity.ScheduleEntity
 import com.drugme.app.alarm.DoseAlarmScheduler
+import com.drugme.app.data.sync.SyncTrigger
 import com.drugme.app.domain.schedule.Forecast
 import com.drugme.app.domain.schedule.StockForecast
 import kotlinx.coroutines.flow.Flow
@@ -25,6 +26,7 @@ class MedicationRepository @Inject constructor(
     private val alarmScheduler: DoseAlarmScheduler,
     private val stockForecast: StockForecast,
     private val clock: Clock,
+    private val syncTrigger: SyncTrigger,
 ) {
 
     fun observeActive(): Flow<List<MedicationWithSchedules>> = medicationDao.observeActive()
@@ -57,6 +59,10 @@ class MedicationRepository @Inject constructor(
 
         doseRepository.materializeWindow()
         alarmScheduler.rescheduleNext()
+        // Back up the change. Every mutation in this repository ends with this — the one
+        // thing whose absence meant medications lived only on the phone and were lost on
+        // reinstall. Keep new mutations honest: if you change data here, request a sync.
+        syncTrigger.requestSync()
     }
 
     /** Pauses a medication: stops future doses, keeps history. */
@@ -68,12 +74,14 @@ class MedicationRepository @Inject constructor(
             scheduleDao.getForMedication(id).forEach { doseRepository.clearFuturePending(it.id) }
         }
         alarmScheduler.rescheduleNext()
+        syncTrigger.requestSync()
     }
 
     /** Hard delete. Cascades to schedules and doses, including history. */
     suspend fun delete(id: String) {
         medicationDao.delete(id)
         alarmScheduler.rescheduleNext()
+        syncTrigger.requestSync()
     }
 
     /** Sets stock directly — a refill, or a correction after counting the packet. */
@@ -85,6 +93,7 @@ class MedicationRepository @Inject constructor(
             refillNotifiedAt = null,
             updatedAt = clock.instant(),
         ))
+        syncTrigger.requestSync()
     }
 
     /** Current run-out forecast for one medication, or null if stock isn't tracked. */
