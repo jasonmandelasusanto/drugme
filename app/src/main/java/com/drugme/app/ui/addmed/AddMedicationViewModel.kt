@@ -54,6 +54,8 @@ data class AddMedicationState(
     // --- schedule ---
     val scheduleType: ScheduleType = ScheduleType.TIMES_PER_DAY,
     val timesOfDay: List<LocalTime> = listOf(LocalTime.of(8, 0)),
+    /** Empty entry means this time follows [doseAmount]. */
+    val doseAmountByTime: Map<LocalTime, String> = emptyMap(),
     val weekdays: WeekdayMask = WeekdayMask.EVERY_DAY,
     val intervalDays: Int = 2,
     val startDate: LocalDate = LocalDate.now(),
@@ -62,6 +64,8 @@ data class AddMedicationState(
     // --- stock ---
     val trackStock: Boolean = false,
     val stockAmount: String = "",
+    val stockUnit: DoseUnit = DoseUnit.TABLET,
+    val stockPerDose: String = "1",
     val refillReminderDays: Int = 7,
 
     val notes: String = "",
@@ -71,6 +75,7 @@ data class AddMedicationState(
 ) {
     val doseAmountValue: Double? get() = doseAmount.replace(',', '.').toDoubleOrNull()
     val stockAmountValue: Double? get() = stockAmount.replace(',', '.').toDoubleOrNull()
+    val stockPerDoseValue: Double? get() = stockPerDose.replace(',', '.').toDoubleOrNull()
 
     val canSave: Boolean
         get() = name.isNotBlank() &&
@@ -79,7 +84,11 @@ data class AddMedicationState(
             (scheduleType != ScheduleType.DAYS_OF_WEEK || !weekdays.isEmpty) &&
             (scheduleType != ScheduleType.INTERVAL_DAYS || intervalDays >= 1) &&
             (endDate == null || !endDate.isBefore(startDate)) &&
-            (!trackStock || (stockAmountValue?.let { it >= 0 } == true))
+            (!trackStock || (
+                stockAmountValue?.let { it >= 0 } == true &&
+                    stockPerDoseValue?.let { it > 0 } == true
+                )) &&
+            doseAmountByTime.values.all { it.replace(',', '.').toDoubleOrNull()?.let { n -> n > 0 } == true }
 }
 
 @HiltViewModel
@@ -138,6 +147,11 @@ class AddMedicationViewModel @Inject constructor(
             val existing = medicationRepository.getById(medicationId) ?: return@launch
             val med = existing.medication
             val schedule = existing.schedules.firstOrNull()
+            val amountsByTime = existing.schedules.flatMap { s ->
+                s.timesOfDay.map { time ->
+                    time to formatAmount(s.doseAmount ?: med.doseAmount)
+                }
+            }.toMap()
 
             _state.value = _state.value.copy(
                 id = med.id,
@@ -150,10 +164,14 @@ class AddMedicationViewModel @Inject constructor(
                 foodRelation = med.foodRelation,
                 trackStock = med.stockAmount != null,
                 stockAmount = med.stockAmount?.let(::formatAmount).orEmpty(),
+                stockUnit = med.stockUnit ?: med.doseUnit,
+                stockPerDose = formatAmount(med.stockPerDose ?: med.doseAmount),
                 refillReminderDays = med.refillReminderDays,
                 notes = med.notes.orEmpty(),
                 scheduleType = schedule?.type ?: ScheduleType.TIMES_PER_DAY,
-                timesOfDay = schedule?.timesOfDay ?: listOf(LocalTime.of(8, 0)),
+                timesOfDay = existing.schedules.flatMap { it.timesOfDay }.distinct().sorted()
+                    .ifEmpty { listOf(LocalTime.of(8, 0)) },
+                doseAmountByTime = amountsByTime,
                 weekdays = schedule?.weekdays ?: WeekdayMask.EVERY_DAY,
                 intervalDays = schedule?.intervalDays ?: 2,
                 startDate = schedule?.startDate ?: LocalDate.now(clock),
@@ -245,6 +263,16 @@ class AddMedicationViewModel @Inject constructor(
         _state.value = _state.value.copy(stockAmount = value.filter { it.isDigit() || it == '.' || it == ',' })
     }
 
+    fun onStockUnitChange(unit: DoseUnit) {
+        _state.value = _state.value.copy(stockUnit = unit)
+    }
+
+    fun onStockPerDoseChange(value: String) {
+        _state.value = _state.value.copy(
+            stockPerDose = value.filter { it.isDigit() || it == '.' || it == ',' }
+        )
+    }
+
     fun onRefillDaysChange(days: Int) {
         _state.value = _state.value.copy(refillReminderDays = days.coerceIn(1, 90))
     }
@@ -257,8 +285,20 @@ class AddMedicationViewModel @Inject constructor(
 
     fun onTimeChanged(index: Int, time: LocalTime) {
         val times = _state.value.timesOfDay.toMutableList()
-        if (index in times.indices) times[index] = time
-        _state.value = _state.value.copy(timesOfDay = times.sorted())
+        if (index !in times.indices) return
+        val old = times[index]
+        times[index] = time
+        val amounts = _state.value.doseAmountByTime.toMutableMap()
+        amounts.remove(old)?.let { amounts[time] = it }
+        _state.value = _state.value.copy(timesOfDay = times.distinct().sorted(), doseAmountByTime = amounts)
+    }
+
+    fun onTimeDoseAmountChange(time: LocalTime, value: String) {
+        _state.value = _state.value.copy(
+            doseAmountByTime = _state.value.doseAmountByTime + (
+                time to value.filter { it.isDigit() || it == '.' || it == ',' }
+                )
+        )
     }
 
     fun onAddTime() {
@@ -270,8 +310,11 @@ class AddMedicationViewModel @Inject constructor(
     fun onRemoveTime(index: Int) {
         val times = _state.value.timesOfDay.toMutableList()
         if (times.size <= 1) return // A schedule with no times produces no reminders at all.
-        times.removeAt(index)
-        _state.value = _state.value.copy(timesOfDay = times)
+        val removed = times.removeAt(index)
+        _state.value = _state.value.copy(
+            timesOfDay = times,
+            doseAmountByTime = _state.value.doseAmountByTime - removed,
+        )
     }
 
     fun onWeekdayToggled(day: DayOfWeek) {
@@ -319,6 +362,8 @@ class AddMedicationViewModel @Inject constructor(
                     doseUnit = s.doseUnit,
                     foodRelation = s.foodRelation,
                     stockAmount = if (s.trackStock) s.stockAmountValue else null,
+                    stockUnit = if (s.trackStock) s.stockUnit else null,
+                    stockPerDose = if (s.trackStock) s.stockPerDoseValue else null,
                     refillReminderDays = s.refillReminderDays,
                     // Editing keeps any existing warning flag unless stock tracking was
                     // turned off, in which case it is meaningless.
@@ -331,22 +376,36 @@ class AddMedicationViewModel @Inject constructor(
                     updatedAt = now,
                 )
 
-                val schedule = ScheduleEntity(
-                    // Reuse the schedule id when editing so its doses are updated in place
-                    // rather than orphaned.
-                    id = existing?.schedules?.firstOrNull()?.id ?: UUID.randomUUID().toString(),
-                    medicationId = medId,
-                    type = s.scheduleType,
-                    timesOfDay = s.timesOfDay,
-                    weekdays = s.weekdays,
-                    intervalDays = s.intervalDays,
-                    startDate = s.startDate,
-                    endDate = s.endDate,
-                    createdAt = existing?.schedules?.firstOrNull()?.createdAt ?: now,
-                    updatedAt = now,
-                )
+                val reusedScheduleIds = mutableSetOf<String>()
+                val schedules = s.timesOfDay.map { time ->
+                    // An older schedule can contain several times. Reuse it for the first
+                    // matching time only, then give every additional time its own id.
+                    // Reusing one primary key twice would make Room upsert only the final
+                    // row and silently drop the earlier time.
+                    val old = existing?.schedules?.firstOrNull {
+                        it.id !in reusedScheduleIds && time in it.timesOfDay
+                    }
+                    old?.let { reusedScheduleIds += it.id }
+                    ScheduleEntity(
+                        id = old?.id ?: UUID.randomUUID().toString(),
+                        medicationId = medId,
+                        type = s.scheduleType,
+                        timesOfDay = listOf(time),
+                        doseAmount = s.doseAmountByTime[time]
+                            ?.replace(',', '.')
+                            ?.toDoubleOrNull()
+                            ?: amount,
+                        doseUnit = s.doseUnit,
+                        weekdays = s.weekdays,
+                        intervalDays = s.intervalDays,
+                        startDate = s.startDate,
+                        endDate = s.endDate,
+                        createdAt = old?.createdAt ?: now,
+                        updatedAt = now,
+                    )
+                }
 
-                medicationRepository.save(medication, listOf(schedule))
+                medicationRepository.save(medication, schedules)
             }.onSuccess {
                 _state.value = _state.value.copy(saving = false, saved = true)
             }.onFailure { t ->

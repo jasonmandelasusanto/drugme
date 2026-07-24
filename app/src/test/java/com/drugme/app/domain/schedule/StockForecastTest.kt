@@ -215,4 +215,31 @@ class StockForecastTest {
         assertEquals(10, f.dosesRemaining)
         assertEquals(5, f.daysRemaining)
     }
+
+    @Test
+    fun `milligram prescription can consume tablets from inventory`() {
+        val medication = med(doseAmount = 500.0, stock = 10.0).copy(
+            doseUnit = DoseUnit.MG,
+            stockUnit = DoseUnit.TABLET,
+            stockPerDose = 1.0,
+        )
+        val f = forecaster.forecast(item(medication), today, utc)!!
+
+        assertEquals(10, f.dosesRemaining)
+        assertEquals(10, f.daysRemaining)
+    }
+
+    @Test
+    fun `larger scheduled dose scales inventory consumption`() {
+        val medication = med(doseAmount = 500.0, stock = 10.0).copy(
+            doseUnit = DoseUnit.MG,
+            stockUnit = DoseUnit.TABLET,
+            stockPerDose = 1.0,
+        )
+        val doubleDose = schedule().copy(doseAmount = 1000.0, doseUnit = DoseUnit.MG)
+        val f = forecaster.forecast(item(medication, doubleDose), today, utc)!!
+
+        assertEquals(5, f.dosesRemaining)
+        assertEquals(5, f.daysRemaining)
+    }
 }

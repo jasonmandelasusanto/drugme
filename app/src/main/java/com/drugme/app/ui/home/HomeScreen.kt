@@ -1,5 +1,8 @@
 package com.drugme.app.ui.home
 
+import android.content.Intent
+import android.provider.Settings
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -27,6 +32,7 @@ import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,8 +40,10 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,15 +64,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.drugme.app.data.local.dao.DoseWithMedication
 import com.drugme.app.domain.model.DoseStatus
 import com.drugme.app.ui.theme.LocalDoseColors
 import java.time.LocalDate
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -82,6 +93,13 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var adjustStock by remember { mutableStateOf<StockAlert?>(null) }
+
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshPermissionState()
+        onPauseOrDispose { }
+    }
 
     Scaffold(
         topBar = {
@@ -113,28 +131,66 @@ fun HomeScreen(
             }
         },
     ) { inner ->
-        Column(Modifier.padding(inner).fillMaxSize()) {
-            Greeting(state.displayName)
-            DateBar(
-                date = state.date,
-                onPrev = { viewModel.showDate(state.date.minusDays(1)) },
-                onNext = { viewModel.showDate(state.date.plusDays(1)) },
-                onToday = viewModel::today,
-            )
-
-            if (state.exactAlarmsBlocked) {
-                ExactAlarmWarning(onFix = onFixExactAlarms)
+        LazyColumn(
+            modifier = Modifier.padding(inner).fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item { Greeting(state.displayName) }
+            if (state.date == LocalDate.now() && !state.loading) {
+                if (state.appUpdate.available || state.appUpdate.checking || state.appUpdate.downloading) {
+                    item {
+                        AppUpdateCard(
+                            state = state.appUpdate,
+                            onInstall = {
+                                if (!viewModel.installUpdate()) {
+                                    context.startActivity(viewModel.unknownSourcesIntent())
+                                }
+                            },
+                        )
+                    }
+                }
+                item { TodaySummary(state) }
+                item {
+                    ReminderHealthCard(
+                        health = state.health,
+                        testSent = state.testReminderSent,
+                        onTest = viewModel::sendTestReminder,
+                        onFixExact = onFixExactAlarms,
+                        onFixNotifications = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            )
+                        },
+                        onFixBattery = {
+                            runCatching {
+                                context.startActivity(
+                                    com.drugme.app.ui.onboarding.OemBatteryGuidance
+                                        .requestIgnoreBatteryOptimizationsIntent(context)
+                                )
+                            }
+                        },
+                    )
+                }
+                if (state.stockAlerts.isNotEmpty()) {
+                    item { LowStockCard(state.stockAlerts, onAdjust = { adjustStock = it }) }
+                }
             }
-
+            item {
+                DateBar(
+                    date = state.date,
+                    onPrev = { viewModel.showDate(state.date.minusDays(1)) },
+                    onNext = { viewModel.showDate(state.date.plusDays(1)) },
+                    onToday = viewModel::today,
+                )
+            }
             when {
                 state.loading -> Unit
-                !state.hasMedications -> EmptyState(onAddMedication)
-                state.doses.isEmpty() -> NoDosesToday()
-                else -> LazyColumn(
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(state.doses, key = { it.dose.id }) { item ->
+                !state.hasMedications -> item { EmptyState(onAddMedication) }
+                state.doses.isEmpty() -> item { NoDosesToday() }
+                else -> items(state.doses, key = { it.dose.id }) { item ->
+                    Box(Modifier.padding(horizontal = 16.dp)) {
                         DoseCard(
                             item = item,
                             onTaken = { viewModel.markTaken(item.dose.id) },
@@ -148,6 +204,17 @@ fun HomeScreen(
             }
         }
     }
+
+    adjustStock?.let { alert ->
+        StockAdjustmentDialog(
+            alert = alert,
+            onDismiss = { adjustStock = null },
+            onSave = { amount ->
+                viewModel.setStock(alert.medication.id, amount)
+                adjustStock = null
+            },
+        )
+    }
 }
 
 /**
@@ -156,6 +223,219 @@ fun HomeScreen(
  * Falls back to a plain "Hello" when signed out: sign-in is optional, and a greeting that
  * only works with an account would quietly punish the people who declined one.
  */
+@Composable
+private fun TodaySummary(state: HomeState) {
+    val elapsed = state.doses.count { it.dose.status != DoseStatus.PENDING }
+    val total = state.doses.size
+    val next = state.doses.firstOrNull { it.dose.status == DoseStatus.PENDING }
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                when {
+                    total == 0 -> "Your day is clear"
+                    next == null -> "All scheduled doses handled"
+                    else -> "Next: ${next.medication.name.replaceFirstChar { it.uppercase() }}"
+                },
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            if (next != null) {
+                Text(
+                    "${next.dose.effectiveAt.atZone(ZoneId.systemDefault()).toLocalTime().format(timeFmt)} · " +
+                        next.unit.format(next.amount),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            if (total > 0) {
+                Spacer(Modifier.height(12.dp))
+                LinearProgressIndicator(
+                    progress = { elapsed.toFloat() / total },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "$elapsed of $total handled today",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppUpdateCard(
+    state: com.drugme.app.data.update.AppUpdateState,
+    onInstall: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                state.title ?: "Checking for a DrugMe update",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Text(
+                when {
+                    state.checking -> "Checking GitHub Releases…"
+                    state.downloading -> "Downloading and verifying the update…"
+                    state.downloaded -> "Downloaded and signature-verified. Ready to install."
+                    else -> "A new version is available."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            if (state.downloaded) {
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(onClick = onInstall) { Text("Review and install") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReminderHealthCard(
+    health: ReminderHealth,
+    testSent: Boolean?,
+    onTest: () -> Unit,
+    onFixExact: () -> Unit,
+    onFixNotifications: () -> Unit,
+    onFixBattery: () -> Unit,
+) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.HealthAndSafety,
+                    contentDescription = null,
+                    tint = if (health.healthy) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Reminder health", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (health.healthy) "Ready to remind you" else "One or more settings need attention",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            HealthRow("Notifications", health.notificationsOk, onFixNotifications)
+            HealthRow("Exact timing", health.exactAlarmsOk, onFixExact)
+            HealthRow("Background access", !health.batteryOptimized, onFixBattery)
+            health.nextReminder?.let {
+                Text(
+                    "Next alarm: ${formatReminderInstant(it)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onTest, enabled = health.notificationsOk) {
+                Text("Send test reminder")
+            }
+            testSent?.let {
+                Text(
+                    if (it) "Test reminder sent." else "Notifications are blocked. Fix them above.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (it) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthRow(label: String, ok: Boolean, onFix: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            if (ok) Icons.Default.CheckCircle else Icons.Default.Warning,
+            contentDescription = null,
+            tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(label, modifier = Modifier.weight(1f))
+        if (!ok) TextButton(onClick = onFix) { Text("Fix") }
+    }
+}
+
+@Composable
+private fun LowStockCard(alerts: List<StockAlert>, onAdjust: (StockAlert) -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Inventory2, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.width(8.dp))
+                Text("Refills needed", style = MaterialTheme.typography.titleMedium)
+            }
+            alerts.take(3).forEach { alert ->
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(alert.medication.name.replaceFirstChar { it.uppercase() })
+                        Text(
+                            alert.forecast.daysRemaining?.let {
+                                if (it <= 0) "Running out now" else "About $it days left"
+                            } ?: "Running low",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = { onAdjust(alert) }) { Text("Update stock") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StockAdjustmentDialog(
+    alert: StockAlert,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit,
+) {
+    var value by remember(alert.medication.id) {
+        mutableStateOf(alert.medication.stockAmount?.toString().orEmpty())
+    }
+    val parsed = value.replace(',', '.').toDoubleOrNull()
+    val unit = alert.medication.stockUnit ?: alert.medication.doseUnit
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Update ${alert.medication.name}") },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it.filter { c -> c.isDigit() || c == '.' || c == ',' } },
+                label = { Text("Amount left (${unit.label})") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { parsed?.let(onSave) }, enabled = parsed != null && parsed >= 0) {
+                Text("Save")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+private fun formatReminderInstant(instant: Instant): String {
+    val local = instant.atZone(ZoneId.systemDefault())
+    return "${local.toLocalDate().format(DateTimeFormatter.ofPattern("EEE d MMM"))} at " +
+        local.toLocalTime().format(timeFmt)
+}
+
 @Composable
 private fun Greeting(displayName: String?) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -273,7 +553,7 @@ private fun DoseCard(
                         textDecoration = if (status == DoseStatus.SKIPPED) TextDecoration.LineThrough else null,
                     )
                     Text(
-                        "${time.format(timeFmt)} · ${item.medication.doseUnit.format(item.medication.doseAmount)}" +
+                        "${time.format(timeFmt)} · ${item.unit.format(item.amount)}" +
                             item.medication.foodRelation.notificationSuffix(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

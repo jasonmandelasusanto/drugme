@@ -71,4 +71,20 @@ class SyncPayloadTest {
         assertTrue(payload.doses.isEmpty())
         assertEquals("Metformin", payload.name)
     }
+
+    @Test
+    fun `dose snapshot and note survive encrypted payload mapping`() {
+        val source = dose("d3", DoseStatus.SKIPPED).copy(
+            doseAmount = 2.0,
+            doseUnit = DoseUnit.TABLET,
+            note = "Felt unwell",
+        )
+        val payload = medication.toPayload(emptyList(), listOf(source))
+        val restored = json.decodeFromString<MedicationPayload>(json.encodeToString(payload))
+            .doses.single().toEntity("m1")
+
+        assertEquals(2.0, restored.doseAmount!!, 0.001)
+        assertEquals(DoseUnit.TABLET, restored.doseUnit)
+        assertEquals("Felt unwell", restored.note)
+    }
 }

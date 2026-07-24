@@ -39,6 +39,12 @@ data class ScheduleEntity(
     /** Wall-clock times to dose at. Applies to every schedule type. */
     val timesOfDay: List<LocalTime>,
 
+    /** Optional amount override for this schedule; null uses the medication's base dose. */
+    val doseAmount: Double? = null,
+
+    /** Unit paired with [doseAmount]. Null uses the medication's base unit. */
+    val doseUnit: com.drugme.app.domain.model.DoseUnit? = null,
+
     /** Used only when [type] is [ScheduleType.DAYS_OF_WEEK]. */
     val weekdays: WeekdayMask = WeekdayMask.EVERY_DAY,
 

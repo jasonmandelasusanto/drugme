@@ -93,14 +93,14 @@ class DoseNotifier @Inject constructor(
     // would duplicate it and invite the two copies to drift apart.
     @SuppressLint("MissingPermission")
     suspend fun notifyDose(item: DoseWithMedication) {
-        if (!hasPermission()) return
+        if (!canNotifyReminders()) return
 
         val med = item.medication
         val discreet = settings.discreetNotifications.first()
 
         // "500 mg · with food" — the food instruction belongs here because this is the
         // moment the user acts on it, not buried in the medication's detail screen.
-        val doseText = med.doseUnit.format(med.doseAmount) + med.foodRelation.notificationSuffix()
+        val doseText = item.unit.format(item.amount) + med.foodRelation.notificationSuffix()
 
         val builder = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
             .setSmallIcon(R.drawable.ic_notification)
@@ -152,7 +152,7 @@ class DoseNotifier @Inject constructor(
      */
     @SuppressLint("MissingPermission") // Guarded by hasPermission() below; see notifyDose.
     suspend fun notifyRefill(medicationName: String, daysRemaining: Int, runOutDate: LocalDate) {
-        if (!hasPermission()) return
+        if (!canNotifyRefills()) return
         val discreet = settings.discreetNotifications.first()
 
         val title = if (discreet) {
@@ -192,6 +192,36 @@ class DoseNotifier @Inject constructor(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
+    fun canNotifyReminders(): Boolean =
+        hasPermission() &&
+            manager.areNotificationsEnabled() &&
+            context.getSystemService(NotificationManager::class.java)
+                .getNotificationChannel(CHANNEL_REMINDERS)
+                ?.importance != NotificationManager.IMPORTANCE_NONE
+
+    fun canNotifyRefills(): Boolean =
+        hasPermission() &&
+            manager.areNotificationsEnabled() &&
+            context.getSystemService(NotificationManager::class.java)
+                .getNotificationChannel(CHANNEL_REFILL)
+                ?.importance != NotificationManager.IMPORTANCE_NONE
+
+    /** A real channel-level smoke test, reachable from Reminder health. */
+    @SuppressLint("MissingPermission")
+    fun notifyTest(): Boolean {
+        if (!canNotifyReminders()) return false
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(context, R.color.brand_blue))
+            .setContentTitle(context.getString(R.string.test_reminder_title))
+            .setContentText(context.getString(R.string.test_reminder_body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        manager.notify(TEST_NOTIFICATION_ID, notification)
+        return true
+    }
+
     private fun action(action: String, doseId: String, code: Int): PendingIntent {
         val intent = Intent(context, DoseAlarmReceiver::class.java).apply {
             this.action = action
@@ -226,5 +256,6 @@ class DoseNotifier @Inject constructor(
 
         /** Offset so refill ids can't collide with dose-id hashes. */
         private const val REFILL_ID_BASE = 900_000
+        private const val TEST_NOTIFICATION_ID = 899_999
     }
 }

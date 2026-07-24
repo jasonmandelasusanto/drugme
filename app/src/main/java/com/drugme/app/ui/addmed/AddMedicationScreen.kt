@@ -342,14 +342,32 @@ private fun StockSection(state: AddMedicationState, vm: AddMedicationViewModel) 
                     modifier = Modifier.width(130.dp),
                 )
                 Spacer(Modifier.width(12.dp))
-                // Stock is counted in the same unit as the dose, so "2 tablets a day" and
-                // "60 tablets left" divide cleanly. Showing the unit here rather than
-                // offering a second picker keeps that guarantee.
                 Text(
-                    state.doseUnit.format(state.stockAmountValue ?: 0.0).substringAfter(' '),
+                    state.stockUnit.format(state.stockAmountValue ?: 0.0).substringAfter(' '),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text("Count stock in", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "For example, a 500 mg dose can use 1 tablet from stock.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            UnitChips(state.stockUnit, vm::onStockUnitChange)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Each base dose uses", modifier = Modifier.weight(1f))
+                OutlinedTextField(
+                    value = state.stockPerDose,
+                    onValueChange = vm::onStockPerDoseChange,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.width(100.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(state.stockUnit.label)
             }
 
             Spacer(Modifier.height(12.dp))
@@ -468,8 +486,11 @@ private fun ScheduleSection(state: AddMedicationState, vm: AddMedicationViewMode
         state.timesOfDay.forEachIndexed { i, t ->
             TimeRow(
                 time = t,
+                amount = state.doseAmountByTime[t] ?: state.doseAmount,
+                unit = state.doseUnit,
                 canRemove = state.timesOfDay.size > 1,
                 onChange = { vm.onTimeChanged(i, it) },
+                onAmountChange = { vm.onTimeDoseAmountChange(t, it) },
                 onRemove = { vm.onRemoveTime(i) },
             )
         }
@@ -485,8 +506,11 @@ private fun ScheduleSection(state: AddMedicationState, vm: AddMedicationViewMode
 @Composable
 private fun TimeRow(
     time: LocalTime,
+    amount: String,
+    unit: DoseUnit,
     canRemove: Boolean,
     onChange: (LocalTime) -> Unit,
+    onAmountChange: (String) -> Unit,
     onRemove: () -> Unit,
 ) {
     var showPicker by remember { mutableStateOf(false) }
@@ -500,6 +524,15 @@ private fun TimeRow(
             label = { Text(time.format(timeFmt), style = MaterialTheme.typography.bodyLarge) },
         )
         Spacer(Modifier.width(8.dp))
+        OutlinedTextField(
+            value = amount,
+            onValueChange = onAmountChange,
+            label = { Text(unit.label) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.width(110.dp),
+        )
+        Spacer(Modifier.width(4.dp))
         if (canRemove) {
             IconButton(onClick = onRemove) {
                 Icon(Icons.Default.Close, contentDescription = "Remove time")

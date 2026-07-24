@@ -8,9 +8,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,8 +38,6 @@ fun DrugMeApp(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    var skippedSignIn by remember { mutableStateOf(false) }
-
     // A Surface gives every gate screen below a themed background and, crucially, sets
     // LocalContentColor to onSurface. Without it these screens (bare Columns, no Scaffold)
     // fall back to the framework default black text — invisible in dark mode.
@@ -50,7 +45,7 @@ fun DrugMeApp(
         when {
             // Null means "not read from disk yet". Rendering onboarding while unknown would
             // flash the disclaimer at every returning user for a frame.
-            state.onboardingComplete == null -> Box(
+            state.onboardingComplete == null || state.backupPromptDismissed == null -> Box(
                 Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator() }
@@ -64,11 +59,11 @@ fun DrugMeApp(
                 onAcknowledge = viewModel::acknowledgeRecoveryCode,
             )
 
-            state.user == null && !skippedSignIn -> SignInScreen(
+            state.user == null && state.backupPromptDismissed == false -> SignInScreen(
                 busy = state.busy,
                 error = state.error,
                 onSignIn = { (context as? Activity)?.let { viewModel.signIn(it) } },
-                onSkip = { skippedSignIn = true },
+                onSkip = viewModel::dismissBackupPrompt,
             )
 
             state.user != null && state.vault is VaultState.NeedsSetup -> VaultSetupScreen(
@@ -88,10 +83,8 @@ fun DrugMeApp(
 
             else -> DrugMeNavHost(
                 onFixExactAlarms = onFixExactAlarms,
-                // Signing out or deleting drops back to the sign-in gate: the `when` above
-                // re-evaluates as soon as authState emits null, so this only has to clear the
-                // local "I chose to skip sign-in" flag.
-                onSignedOut = { skippedSignIn = false },
+                onSignIn = { viewModel.showBackupPrompt() },
+                onSignedOut = viewModel::showBackupPrompt,
             )
         }
     }

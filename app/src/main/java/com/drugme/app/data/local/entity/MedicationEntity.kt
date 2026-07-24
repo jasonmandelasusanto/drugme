@@ -64,6 +64,19 @@ data class MedicationEntity(
     val stockAmount: Double? = null,
 
     /**
+     * Unit the user counts in the cupboard. This is deliberately separate from [doseUnit]:
+     * a 500 mg dose commonly consumes one tablet, not 500 "milligrams of stock".
+     * Null on legacy rows means "same as doseUnit".
+     */
+    val stockUnit: DoseUnit? = null,
+
+    /**
+     * Inventory consumed by one base dose. Null on legacy rows means [doseAmount].
+     * Per-time dose overrides scale this value proportionally.
+     */
+    val stockPerDose: Double? = null,
+
+    /**
      * Warn this many days before the stock runs out. Only meaningful when [stockAmount]
      * is set.
      *

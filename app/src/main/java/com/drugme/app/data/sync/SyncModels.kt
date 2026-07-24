@@ -36,6 +36,8 @@ data class MedicationPayload(
     // not fail to sync onto a newer one.
     val foodRelation: String = "ANY",
     val stockAmount: Double? = null,
+    val stockUnit: String? = null,
+    val stockPerDose: Double? = null,
     val refillReminderDays: Int = 7,
     val diseaseId: String? = null,
     val diseaseName: String? = null,
@@ -56,7 +58,7 @@ data class MedicationPayload(
          * unknown keys). The number exists so a future breaking change can be detected rather
          * than guessed at.
          */
-        const val SCHEMA_VERSION = 3
+        const val SCHEMA_VERSION = 4
     }
 }
 
@@ -73,9 +75,12 @@ data class DosePayload(
     val scheduleId: String,
     val scheduledAt: Long,
     val localDate: String,
+    val doseAmount: Double? = null,
+    val doseUnit: String? = null,
     val status: String,
     val takenAt: Long? = null,
     val snoozedUntil: Long? = null,
+    val note: String? = null,
 )
 
 @Serializable
@@ -84,6 +89,8 @@ data class SchedulePayload(
     val type: String,
     /** "08:00,20:00" — wall-clock, so it stays correct across zones and DST. */
     val timesOfDay: String,
+    val doseAmount: Double? = null,
+    val doseUnit: String? = null,
     val weekdayBits: Int,
     val intervalDays: Int,
     val startDate: String,
@@ -119,6 +126,8 @@ fun MedicationEntity.toPayload(
     doseUnit = doseUnit.name,
     foodRelation = foodRelation.name,
     stockAmount = stockAmount,
+    stockUnit = stockUnit?.name,
+    stockPerDose = stockPerDose,
     refillReminderDays = refillReminderDays,
     diseaseId = diseaseId,
     diseaseName = diseaseName,
@@ -131,6 +140,8 @@ fun MedicationEntity.toPayload(
             id = s.id,
             type = s.type.name,
             timesOfDay = s.timesOfDay.joinToString(",") { it.toString() },
+            doseAmount = s.doseAmount,
+            doseUnit = s.doseUnit?.name,
             weekdayBits = s.weekdays.bits,
             intervalDays = s.intervalDays,
             startDate = s.startDate.toString(),
@@ -147,9 +158,12 @@ fun DoseEntity.toDosePayload() = DosePayload(
     scheduleId = scheduleId,
     scheduledAt = scheduledAt.toEpochMilli(),
     localDate = localDate.toString(),
+    doseAmount = doseAmount,
+    doseUnit = doseUnit?.name,
     status = status.name,
     takenAt = takenAt?.toEpochMilli(),
     snoozedUntil = snoozedUntil?.toEpochMilli(),
+    note = note,
 )
 
 fun MedicationPayload.toEntity() = MedicationEntity(
@@ -164,6 +178,8 @@ fun MedicationPayload.toEntity() = MedicationEntity(
     // getting this wrong is an inconvenience, not a dosing error.
     foodRelation = runCatching { FoodRelation.valueOf(foodRelation) }.getOrDefault(FoodRelation.ANY),
     stockAmount = stockAmount,
+    stockUnit = stockUnit?.let { runCatching { DoseUnit.valueOf(it) }.getOrNull() },
+    stockPerDose = stockPerDose,
     refillReminderDays = refillReminderDays,
     diseaseId = diseaseId,
     diseaseName = diseaseName,
@@ -178,6 +194,8 @@ fun SchedulePayload.toEntity(medicationId: String) = ScheduleEntity(
     medicationId = medicationId,
     type = ScheduleType.valueOf(type),
     timesOfDay = timesOfDay.split(",").filter { it.isNotBlank() }.map { LocalTime.parse(it.trim()) },
+    doseAmount = doseAmount,
+    doseUnit = doseUnit?.let { runCatching { DoseUnit.valueOf(it) }.getOrNull() },
     weekdays = WeekdayMask(weekdayBits),
     intervalDays = intervalDays,
     startDate = LocalDate.parse(startDate),
@@ -192,9 +210,12 @@ fun DosePayload.toEntity(medicationId: String) = DoseEntity(
     scheduleId = scheduleId,
     scheduledAt = Instant.ofEpochMilli(scheduledAt),
     localDate = LocalDate.parse(localDate),
+    doseAmount = doseAmount,
+    doseUnit = doseUnit?.let { DoseUnit.valueOf(it) },
     // valueOf, not a lenient fallback: an unrecognised status is a bug we want to see, not a
     // dose silently resurrected to PENDING and re-alarmed.
     status = DoseStatus.valueOf(status),
     takenAt = takenAt?.let(Instant::ofEpochMilli),
     snoozedUntil = snoozedUntil?.let(Instant::ofEpochMilli),
+    note = note,
 )

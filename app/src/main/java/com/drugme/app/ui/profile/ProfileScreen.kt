@@ -21,6 +21,9 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Login
+import androidx.compose.material.icons.filled.PauseCircle
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -38,6 +41,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,6 +70,7 @@ import kotlin.math.roundToInt
 fun ProfileScreen(
     onNavigateBack: () -> Unit,
     onEditMedication: (String) -> Unit,
+    onSignIn: () -> Unit,
     onSignedOut: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
@@ -94,11 +99,24 @@ fun ProfileScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { AccountCard(state) }
+            item { AccountCard(state, onSignIn) }
+            item {
+                PrivacyCard(
+                    enabled = state.discreetNotifications,
+                    onChange = viewModel::setDiscreetNotifications,
+                )
+            }
             item { AdherenceCard(state) }
             item { PunctualityCard(state) }
             item { UsageCard(state) }
-            item { MedicationsCard(state, onEditMedication, onDelete = { pendingDelete = it }) }
+            item {
+                MedicationsCard(
+                    state,
+                    onEditMedication,
+                    onToggleActive = viewModel::setMedicationActive,
+                    onDelete = { pendingDelete = it },
+                )
+            }
             item { DangerZone(state, onSignOut = { viewModel.signOut(); onSignedOut() }, onDelete = { confirmDelete = true }) }
             state.error?.let {
                 item { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
@@ -110,6 +128,7 @@ fun ProfileScreen(
     if (confirmDelete) {
         DeleteAccountDialog(
             busy = state.deleting,
+            hasAccount = state.user != null,
             onConfirm = { viewModel.deleteAccount() },
             onDismiss = { confirmDelete = false },
         )
@@ -128,7 +147,7 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun AccountCard(state: ProfileState) {
+private fun AccountCard(state: ProfileState, onSignIn: () -> Unit) {
     SectionCard(title = "Account") {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val photo = state.user?.photoUrl
@@ -172,8 +191,31 @@ private fun AccountCard(state: ProfileState) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(onClick = onSignIn) {
+                        Icon(Icons.Default.Login, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Enable encrypted backup")
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PrivacyCard(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    SectionCard(title = "Privacy") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Discreet notifications", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Hide medication names and dose details from every notification.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = enabled, onCheckedChange = onChange)
         }
     }
 }
@@ -310,6 +352,7 @@ private fun UsageCard(state: ProfileState) {
 private fun MedicationsCard(
     state: ProfileState,
     onEdit: (String) -> Unit,
+    onToggleActive: (String, Boolean) -> Unit,
     onDelete: (MedicationEntity) -> Unit,
 ) {
     val c = LocalDoseColors.current
@@ -356,6 +399,13 @@ private fun MedicationsCard(
                     if (!med.isActive) {
                         Text("Paused", style = MaterialTheme.typography.labelLarge, color = c.skipped)
                     }
+                    IconButton(onClick = { onToggleActive(med.id, !med.isActive) }) {
+                        Icon(
+                            if (med.isActive) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
+                            contentDescription = if (med.isActive) "Pause ${med.name}" else "Resume ${med.name}",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     // Sits outside the row's edit click; IconButton consumes its own tap so
                     // deleting never doubles as an accidental edit.
                     IconButton(onClick = { onDelete(med) }) {
@@ -380,7 +430,8 @@ private fun MedicationsCard(
                         Spacer(Modifier.width(6.dp))
                         Text(
                             buildString {
-                                append("${fmt(med.stockAmount)} left")
+                                val unit = med.stockUnit ?: med.doseUnit
+                                append("${unit.format(med.stockAmount)} left")
                                 forecast?.daysRemaining?.let { d ->
                                     append(
                                         when {
@@ -429,7 +480,7 @@ private fun DangerZone(state: ProfileState, onSignOut: () -> Unit, onDelete: () 
                 contentColor = MaterialTheme.colorScheme.error,
             ),
         ) {
-            Text("Delete account and all data")
+            Text(if (state.user != null) "Delete account and all data" else "Erase all local data")
         }
     }
 }
@@ -443,26 +494,37 @@ private fun DangerZone(state: ProfileState, onSignOut: () -> Unit, onDelete: () 
  * undo.
  */
 @Composable
-private fun DeleteAccountDialog(busy: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun DeleteAccountDialog(
+    busy: Boolean,
+    hasAccount: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     var typed by remember { mutableStateOf("") }
     val confirmed = typed.trim().equals("DELETE", ignoreCase = false)
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-        title = { Text("Delete everything?") },
+        title = { Text(if (hasAccount) "Delete everything?" else "Erase local data?") },
         text = {
             Column {
                 Text("This permanently deletes:")
                 Spacer(Modifier.height(8.dp))
                 Text("• Your medications and schedules")
                 Text("• Your full dose history")
-                Text("• Your encrypted backup")
-                Text("• Your account")
+                if (hasAccount) {
+                    Text("• Your encrypted backup")
+                    Text("• Your account")
+                }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "This cannot be undone. Because your data is encrypted with your passphrase, " +
-                        "we cannot recover it for you afterwards.",
+                    if (hasAccount) {
+                        "This cannot be undone. Because your data is encrypted with your passphrase, " +
+                            "we cannot recover it for you afterwards."
+                    } else {
+                        "This cannot be undone. There is no cloud backup for local-only data."
+                    },
                     color = MaterialTheme.colorScheme.error,
                 )
                 Spacer(Modifier.height(16.dp))

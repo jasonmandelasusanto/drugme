@@ -26,6 +26,7 @@ object Routes {
 @Composable
 fun DrugMeNavHost(
     onFixExactAlarms: () -> Unit,
+    onSignIn: () -> Unit,
     onSignedOut: () -> Unit,
     navController: NavHostController = rememberNavController(),
 ) {
@@ -65,6 +66,7 @@ fun DrugMeNavHost(
             ProfileScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onEditMedication = { id -> navController.navigate(Routes.editMedication(id)) },
+                onSignIn = onSignIn,
                 onSignedOut = onSignedOut,
             )
         }

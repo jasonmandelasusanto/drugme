@@ -20,8 +20,10 @@
     <string name="refill_body_now">You have run out. Time to refill.</string>
     <string name="refill_body_tomorrow">You will run out tomorrow.</string>
     <string name="refill_body_days">About %1$d days left.</string>
+    <string name="test_reminder_title">DrugMe test reminder</string>
+    <string name="test_reminder_body">Notifications are working.</string>
 
     <string name="greeting">Hello, %1$s</string>
     <string name="greeting_anon">Hello</string>
-    <string name="greeting_question">Have you taken your drugs?</string>
+    <string name="greeting_question">Here’s what’s due today.</string>
 </resources>

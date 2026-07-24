@@ -43,13 +43,17 @@ class StockForecast @Inject constructor(
         horizonDays: Long = HORIZON_DAYS,
     ): Forecast? {
         val stock = item.medication.stockAmount ?: return null
-        val perDose = item.medication.doseAmount
-        if (perDose <= 0.0) return null
+        val baseDose = item.medication.doseAmount
+        val baseStockUse = item.medication.stockPerDose ?: baseDose
+        if (baseDose <= 0.0 || baseStockUse <= 0.0) return null
 
         // Every upcoming dose across all of this medication's schedules, in time order.
         val upcoming = item.schedules
-            .flatMap { generator.generate(it, today, today.plusDays(horizonDays), zone) }
-            .sortedBy { it.scheduledAt }
+            .flatMap { schedule ->
+                generator.generate(schedule = schedule, from = today, to = today.plusDays(horizonDays), zone = zone)
+                    .map { occurrence -> occurrence to stockUse(item, schedule, baseDose, baseStockUse) }
+            }
+            .sortedBy { it.first.scheduledAt }
 
         if (upcoming.isEmpty()) {
             // Nothing scheduled: the stock is not being consumed, so it never runs out.
@@ -64,7 +68,7 @@ class StockForecast @Inject constructor(
 
         var remaining = stock
         var taken = 0
-        for (occurrence in upcoming) {
+        for ((occurrence, perDose) in upcoming) {
             if (remaining < perDose) {
                 // This dose can't be covered — that day is when they actually run short.
                 val days = java.time.temporal.ChronoUnit.DAYS.between(today, occurrence.localDate).toInt()
@@ -88,6 +92,21 @@ class StockForecast @Inject constructor(
             stockAmount = stock,
             needsRefillWarning = false,
         )
+    }
+
+    private fun stockUse(
+        item: MedicationWithSchedules,
+        schedule: com.drugme.app.data.local.entity.ScheduleEntity,
+        baseDose: Double,
+        baseStockUse: Double,
+    ): Double {
+        val amount = schedule.doseAmount ?: baseDose
+        val unit = schedule.doseUnit ?: item.medication.doseUnit
+        return if (unit == item.medication.doseUnit) {
+            baseStockUse * (amount / baseDose)
+        } else {
+            baseStockUse
+        }
     }
 
     private companion object {

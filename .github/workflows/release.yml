@@ -87,10 +87,16 @@ jobs:
       - name: Unit tests
         # A release that ships without passing the crypto and schedule tests is not worth
         # the minutes saved: both fail silently in production.
-        run: ./gradlew testReleaseUnitTest --stacktrace
+        run: |
+          VERSION="${{ github.event.inputs.version_name }}"
+          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          ./gradlew testReleaseUnitTest -PversionName="$VERSION" --stacktrace
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --stacktrace
+        run: |
+          VERSION="${{ github.event.inputs.version_name }}"
+          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          ./gradlew assembleRelease -PversionName="$VERSION" --stacktrace
 
       - name: Verify the APK is actually signed
         run: |

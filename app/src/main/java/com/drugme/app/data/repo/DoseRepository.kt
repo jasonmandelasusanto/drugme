@@ -61,6 +61,7 @@ class DoseRepository @Inject constructor(
 
         var created = 0
         for (schedule in scheduleDao.getGeneratable(today.toString())) {
+            val medication = medicationDao.getMedication(schedule.medicationId) ?: continue
             // Start from today rather than the last generated dose: backfilling is what
             // lets a dose the user hasn't seen yet still appear after a long gap, and the
             // unique index absorbs the overlap.
@@ -74,6 +75,8 @@ class DoseRepository @Inject constructor(
                     scheduleId = schedule.id,
                     scheduledAt = o.scheduledAt,
                     localDate = o.localDate,
+                    doseAmount = schedule.doseAmount ?: medication.doseAmount,
+                    doseUnit = schedule.doseUnit ?: medication.doseUnit,
                     status = DoseStatus.PENDING,
                 )
             }
@@ -140,7 +143,21 @@ class DoseRepository @Inject constructor(
             if (current.status == status) return@withTransaction
 
             val medication = medicationDao.getMedication(current.medicationId)
-            val perDose = medication?.doseAmount ?: 0.0
+            val actualDose = current.doseAmount ?: medication?.doseAmount ?: 0.0
+            val baseDose = medication?.doseAmount ?: actualDose
+            val baseStockUse = medication?.stockPerDose ?: baseDose
+            // A two-tablet evening dose consumes twice the inventory of a one-tablet
+            // base dose. If the dose is expressed in another unit, fall back to the
+            // configured per-dose inventory amount rather than inventing a conversion.
+            val perDose = if (
+                medication != null &&
+                baseDose > 0 &&
+                (current.doseUnit ?: medication.doseUnit) == medication.doseUnit
+            ) {
+                baseStockUse * (actualDose / baseDose)
+            } else {
+                baseStockUse
+            }
             val wasTaken = current.status == DoseStatus.TAKEN
             val nowTaken = status == DoseStatus.TAKEN
 
@@ -173,6 +190,11 @@ class DoseRepository @Inject constructor(
         doseDao.setSnoozed(doseId, until.toEpochMilli())
         syncTrigger.requestSync()
         return until
+    }
+
+    suspend fun setNote(doseId: String, value: String?) {
+        doseDao.setNote(doseId, value?.trim()?.ifBlank { null })
+        syncTrigger.requestSync()
     }
 
     /**

@@ -11,6 +11,7 @@ import com.drugme.app.alarm.RearmWorker
 import com.drugme.app.data.sync.SyncWorker
 import com.drugme.app.data.repo.DoseRepository
 import com.drugme.app.data.repo.DiseaseCatalogRepository
+import com.drugme.app.data.update.AppUpdateWorker
 import com.drugme.app.data.repo.DrugCatalogRepository
 import com.drugme.app.ui.DrugMeApp
 import com.drugme.app.ui.theme.DrugMeTheme
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
         // again (the key is cached, so unlock rarely recurs). Per-change pushes are requested
         // from MedicationRepository; this catches anything they missed while offline.
         SyncWorker.enqueuePeriodic(this)
+        AppUpdateWorker.enqueue(this)
         // POST_NOTIFICATIONS is requested from the onboarding Reminders step, where the
         // rationale is shown, rather than blindly here on launch (which surfaced the system
         // dialog over the disclaimer).

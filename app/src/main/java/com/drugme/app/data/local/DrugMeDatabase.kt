@@ -39,7 +39,7 @@ import com.drugme.app.data.local.entity.ScheduleEntity
         DiseaseCatalogEntity::class,
         DiseaseCatalogFts::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

@@ -5,6 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.drugme.app.domain.model.DoseStatus
+import com.drugme.app.domain.model.DoseUnit
 import java.time.Instant
 import java.time.LocalDate
 
@@ -61,12 +62,22 @@ data class DoseEntity(
      */
     val localDate: LocalDate,
 
+    /**
+     * Snapshot of the prescribed amount when this occurrence was generated. Keeping it on
+     * the occurrence means a later prescription edit cannot rewrite historical totals.
+     */
+    val doseAmount: Double? = null,
+    val doseUnit: DoseUnit? = null,
+
     val status: DoseStatus = DoseStatus.PENDING,
 
     val takenAt: Instant? = null,
 
     /** Set when snoozed; the alarm re-fires at this instant instead of [scheduledAt]. */
     val snoozedUntil: Instant? = null,
+
+    /** Optional context recorded by the user, for example why a dose was skipped. */
+    val note: String? = null,
 ) {
     /** When this dose should actually alert — the snooze target if one is set. */
     val effectiveAt: Instant get() = snoozedUntil ?: scheduledAt

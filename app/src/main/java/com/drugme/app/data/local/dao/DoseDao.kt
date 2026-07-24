@@ -14,7 +14,10 @@ import kotlinx.coroutines.flow.Flow
 data class DoseWithMedication(
     @Embedded val dose: DoseEntity,
     @Embedded(prefix = "med_") val medication: MedicationEntity,
-)
+) {
+    val amount: Double get() = dose.doseAmount ?: medication.doseAmount
+    val unit: com.drugme.app.domain.model.DoseUnit get() = dose.doseUnit ?: medication.doseUnit
+}
 
 @Dao
 interface DoseDao {
@@ -54,6 +57,7 @@ interface DoseDao {
                m.doseAmount AS med_doseAmount, m.doseUnit AS med_doseUnit,
                m.foodRelation AS med_foodRelation,
                m.stockAmount AS med_stockAmount,
+               m.stockUnit AS med_stockUnit, m.stockPerDose AS med_stockPerDose,
                m.refillReminderDays AS med_refillReminderDays,
                m.refillNotifiedAt AS med_refillNotifiedAt,
                m.diseaseId AS med_diseaseId, m.diseaseName AS med_diseaseName,
@@ -74,6 +78,7 @@ interface DoseDao {
                m.doseAmount AS med_doseAmount, m.doseUnit AS med_doseUnit,
                m.foodRelation AS med_foodRelation,
                m.stockAmount AS med_stockAmount,
+               m.stockUnit AS med_stockUnit, m.stockPerDose AS med_stockPerDose,
                m.refillReminderDays AS med_refillReminderDays,
                m.refillNotifiedAt AS med_refillNotifiedAt,
                m.diseaseId AS med_diseaseId, m.diseaseName AS med_diseaseName,
@@ -103,6 +108,7 @@ interface DoseDao {
                m.doseAmount AS med_doseAmount, m.doseUnit AS med_doseUnit,
                m.foodRelation AS med_foodRelation,
                m.stockAmount AS med_stockAmount,
+               m.stockUnit AS med_stockUnit, m.stockPerDose AS med_stockPerDose,
                m.refillReminderDays AS med_refillReminderDays,
                m.refillNotifiedAt AS med_refillNotifiedAt,
                m.diseaseId AS med_diseaseId, m.diseaseName AS med_diseaseName,
@@ -152,6 +158,9 @@ interface DoseDao {
     @Query("UPDATE doses SET snoozedUntil = :until WHERE id = :id")
     suspend fun setSnoozed(id: String, until: Long)
 
+    @Query("UPDATE doses SET note = :note WHERE id = :id")
+    suspend fun setNote(id: String, note: String?)
+
     @Query("UPDATE doses SET status = 'MISSED' WHERE id IN (:ids)")
     suspend fun markMissed(ids: List<String>)
 
@@ -181,6 +190,7 @@ interface DoseDao {
                m.doseAmount AS med_doseAmount, m.doseUnit AS med_doseUnit,
                m.foodRelation AS med_foodRelation,
                m.stockAmount AS med_stockAmount,
+               m.stockUnit AS med_stockUnit, m.stockPerDose AS med_stockPerDose,
                m.refillReminderDays AS med_refillReminderDays,
                m.refillNotifiedAt AS med_refillNotifiedAt,
                m.diseaseId AS med_diseaseId, m.diseaseName AS med_diseaseName,
@@ -225,12 +235,13 @@ interface DoseDao {
      */
     @Query(
         """
-        SELECT m.id AS medicationId, m.name AS name, m.doseUnit AS unit,
-               COUNT(*) AS doseCount, SUM(m.doseAmount) AS totalAmount
+        SELECT m.id AS medicationId, m.name AS name,
+               COALESCE(d.doseUnit, m.doseUnit) AS unit,
+               COUNT(*) AS doseCount, SUM(COALESCE(d.doseAmount, m.doseAmount)) AS totalAmount
         FROM doses d
         INNER JOIN medications m ON m.id = d.medicationId
         WHERE d.status = 'TAKEN'
-        GROUP BY m.id
+        GROUP BY m.id, COALESCE(d.doseUnit, m.doseUnit)
         ORDER BY m.name COLLATE NOCASE ASC
         """
     )
@@ -238,12 +249,13 @@ interface DoseDao {
 
     @Query(
         """
-        SELECT m.id AS medicationId, m.name AS name, m.doseUnit AS unit,
-               COUNT(*) AS doseCount, SUM(m.doseAmount) AS totalAmount
+        SELECT m.id AS medicationId, m.name AS name,
+               COALESCE(d.doseUnit, m.doseUnit) AS unit,
+               COUNT(*) AS doseCount, SUM(COALESCE(d.doseAmount, m.doseAmount)) AS totalAmount
         FROM doses d
         INNER JOIN medications m ON m.id = d.medicationId
         WHERE d.status = 'TAKEN' AND d.localDate BETWEEN :from AND :to
-        GROUP BY m.id
+        GROUP BY m.id, COALESCE(d.doseUnit, m.doseUnit)
         ORDER BY m.name COLLATE NOCASE ASC
         """
     )

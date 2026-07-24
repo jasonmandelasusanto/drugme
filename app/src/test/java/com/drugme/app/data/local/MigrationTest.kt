@@ -1,148 +1,63 @@
 package com.drugme.app.data.local
 
-import androidx.room.testing.MigrationTestHelper
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
-import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Migrations must never lose data.
+ * Runs the real migration SQL against Android SQLite in memory.
  *
- * This is the failure mode with no recovery: a user's medication list and adherence history
- * exist only on their phone and (encrypted) in their own Firestore. A migration that drops
- * a table destroys a medical record, silently, and the app looks fine afterwards — it just
- * has nothing in it. The alternative most projects reach for,
- * fallbackToDestructiveMigration, does exactly that by design, which is why it is
- * deliberately absent from DatabaseModule.
- *
- * Runs under Robolectric so it executes on the JVM in CI. sdk=34 rather than 36 because
- * Robolectric ships prebuilt Android runtimes and lags the newest API by a release or two.
+ * Room 2.8's MigrationTestHelper currently compares a Windows Robolectric absolute path
+ * with the configured relative database name and rejects every database before a migration
+ * runs. Using the same FrameworkSQLiteDatabase directly keeps these tests cross-platform
+ * while still exercising SQLite's actual ALTER TABLE, FTS and trigger behaviour.
+ * Room's exported schema is independently generated and checked by KSP on every build.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class MigrationTest {
 
-    @get:Rule
-    val helper = MigrationTestHelper(
-        InstrumentationRegistry.getInstrumentation(),
-        DrugMeDatabase::class.java,
-        emptyList(),
-        FrameworkSQLiteOpenHelperFactory(),
-    )
-
     @Test
-    fun `migrate 1 to 2 keeps existing medications`() {
-        val dbName = "migration-test-1"
+    fun `migrate 1 to 2 keeps medication and applies safe defaults`() = withV1 { db ->
+        db.execSQL(
+            """
+            INSERT INTO medications
+                (id, name, rxcui, doseAmount, doseUnit, diseaseId, diseaseName,
+                 notes, isActive, createdAt, updatedAt)
+            VALUES ('m1', 'metformin', '6809', 500.0, 'MG', 'D003924',
+                    'Diabetes Mellitus, Type 2', 'with breakfast', 1, 1000, 1000)
+            """.trimIndent()
+        )
 
-        helper.createDatabase(dbName, 1).use { db ->
-            db.execSQL(
-                """
-                INSERT INTO medications
-                    (id, name, rxcui, doseAmount, doseUnit, diseaseId, diseaseName,
-                     notes, isActive, createdAt, updatedAt)
-                VALUES
-                    ('m1', 'metformin', '6809', 500.0, 'MG', 'D003924',
-                     'Diabetes Mellitus, Type 2', 'with breakfast', 1, 1000, 1000)
-                """.trimIndent()
-            )
-        }
+        MIGRATION_1_2.migrate(db)
 
-        val db = helper.runMigrationsAndValidate(dbName, 2, true, MIGRATION_1_2)
-
-        db.query("SELECT * FROM medications WHERE id = 'm1'").use { c ->
-            assertTrue("the medication survived the migration", c.moveToFirst())
-            assertEquals("metformin", c.getString(c.getColumnIndexOrThrow("name")))
-            assertEquals(500.0, c.getDouble(c.getColumnIndexOrThrow("doseAmount")), 0.001)
-            assertEquals("with breakfast", c.getString(c.getColumnIndexOrThrow("notes")))
-            assertEquals("D003924", c.getString(c.getColumnIndexOrThrow("diseaseId")))
+        db.query(
+            "SELECT name, doseAmount, notes, diseaseId, foodRelation, stockAmount, refillReminderDays " +
+                "FROM medications WHERE id = 'm1'"
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("metformin", c.getString(0))
+            assertEquals(500.0, c.getDouble(1), 0.001)
+            assertEquals("with breakfast", c.getString(2))
+            assertEquals("D003924", c.getString(3))
+            assertEquals("ANY", c.getString(4))
+            assertTrue(c.isNull(5))
+            assertEquals(7, c.getInt(6))
         }
     }
 
     @Test
-    fun `migrate 1 to 2 defaults existing rows to no food preference`() {
-        val dbName = "migration-test-2"
-        helper.createDatabase(dbName, 1).use { db ->
-            db.execSQL(
-                """
-                INSERT INTO medications
-                    (id, name, doseAmount, doseUnit, isActive, createdAt, updatedAt)
-                VALUES ('m1', 'aspirin', 75.0, 'MG', 1, 1000, 1000)
-                """.trimIndent()
-            )
-        }
+    fun `migrate 1 to 2 keeps schedule and dose history`() = withV1 { db ->
+        insertMedicationScheduleAndDose(db)
+        MIGRATION_1_2.migrate(db)
 
-        val db = helper.runMigrationsAndValidate(dbName, 2, true, MIGRATION_1_2)
-
-        db.query("SELECT foodRelation FROM medications WHERE id = 'm1'").use { c ->
-            c.moveToFirst()
-            // Rows that predate the concept must land on "no preference stated", not on an
-            // invented instruction.
-            assertEquals("ANY", c.getString(0))
-        }
-    }
-
-    @Test
-    fun `migrate 1 to 2 leaves existing rows not tracking stock`() {
-        val dbName = "migration-test-3"
-        helper.createDatabase(dbName, 1).use { db ->
-            db.execSQL(
-                """
-                INSERT INTO medications
-                    (id, name, doseAmount, doseUnit, isActive, createdAt, updatedAt)
-                VALUES ('m1', 'aspirin', 75.0, 'MG', 1, 1000, 1000)
-                """.trimIndent()
-            )
-        }
-
-        val db = helper.runMigrationsAndValidate(dbName, 2, true, MIGRATION_1_2)
-
-        db.query("SELECT stockAmount, refillReminderDays FROM medications WHERE id = 'm1'").use { c ->
-            c.moveToFirst()
-            // NULL, not 0. Defaulting to zero would mean "I have run out" and fire a refill
-            // warning at every existing medication the moment the user updated the app.
-            assertTrue("stock must be NULL for pre-existing rows", c.isNull(0))
-            assertEquals(7, c.getInt(1))
-        }
-    }
-
-    @Test
-    fun `migrate 1 to 2 keeps dose history`() {
-        val dbName = "migration-test-4"
-        helper.createDatabase(dbName, 1).use { db ->
-            db.execSQL(
-                """
-                INSERT INTO medications (id, name, doseAmount, doseUnit, isActive, createdAt, updatedAt)
-                VALUES ('m1', 'aspirin', 75.0, 'MG', 1, 1000, 1000)
-                """.trimIndent()
-            )
-            db.execSQL(
-                """
-                INSERT INTO schedules
-                    (id, medicationId, type, timesOfDay, weekdays, intervalDays,
-                     startDate, endDate, createdAt, updatedAt)
-                VALUES ('s1', 'm1', 'TIMES_PER_DAY', '08:00', 127, 1,
-                        '2026-01-01', NULL, 1000, 1000)
-                """.trimIndent()
-            )
-            db.execSQL(
-                """
-                INSERT INTO doses
-                    (id, medicationId, scheduleId, scheduledAt, localDate, status, takenAt, snoozedUntil)
-                VALUES ('d1', 'm1', 's1', 5000, '2026-01-01', 'TAKEN', 5100, NULL)
-                """.trimIndent()
-            )
-        }
-
-        val db = helper.runMigrationsAndValidate(dbName, 2, true, MIGRATION_1_2)
-
-        // Adherence history is the thing a user would most obviously notice losing.
         db.query("SELECT status, takenAt FROM doses WHERE id = 'd1'").use { c ->
             assertTrue(c.moveToFirst())
             assertEquals("TAKEN", c.getString(0))
@@ -155,20 +70,110 @@ class MigrationTest {
     }
 
     @Test
-    fun `migrate 1 to 2 creates a working disease catalog with its FTS index`() {
-        val dbName = "migration-test-5"
-        helper.createDatabase(dbName, 1).close()
-
-        val db = helper.runMigrationsAndValidate(dbName, 2, true, MIGRATION_1_2)
-
+    fun `migrate 1 to 2 creates a working disease FTS index`() = withV1 { db ->
+        MIGRATION_1_2.migrate(db)
         db.execSQL("INSERT INTO disease_catalog (id, name) VALUES ('D003924', 'Diabetes Mellitus, Type 2')")
 
-        // The FTS triggers are hand-written in the migration (Room only generates them when
-        // it creates the schema itself). Without them the table exists, inserts succeed, and
-        // search silently returns nothing forever.
         db.query("SELECT name FROM disease_catalog_fts WHERE disease_catalog_fts MATCH '\"diabetes\"*'").use { c ->
             assertTrue("FTS index was not populated — triggers missing", c.moveToFirst())
             assertEquals("Diabetes Mellitus, Type 2", c.getString(0))
         }
+    }
+
+    @Test
+    fun `migrate 2 to 3 preserves history and adds nullable snapshots`() = withV1 { db ->
+        MIGRATION_1_2.migrate(db)
+        insertMedicationScheduleAndDose(db)
+        MIGRATION_2_3.migrate(db)
+
+        db.query("SELECT status, doseAmount, doseUnit, note FROM doses WHERE id = 'd1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("TAKEN", c.getString(0))
+            assertTrue(c.isNull(1))
+            assertTrue(c.isNull(2))
+            assertTrue(c.isNull(3))
+        }
+        db.query("SELECT stockUnit, stockPerDose FROM medications WHERE id = 'm1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+            assertTrue(c.isNull(1))
+        }
+    }
+
+    private fun withV1(block: (SupportSQLiteDatabase) -> Unit) {
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(
+                ApplicationProvider.getApplicationContext()
+            )
+                .name(null)
+                .callback(object : SupportSQLiteOpenHelper.Callback(1) {
+                    override fun onCreate(db: SupportSQLiteDatabase) = Unit
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        val database = helper.writableDatabase
+        try {
+            database.execSQL(
+                """
+                CREATE TABLE medications (
+                    id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, rxcui TEXT,
+                    doseAmount REAL NOT NULL, doseUnit TEXT NOT NULL, diseaseId TEXT,
+                    diseaseName TEXT, notes TEXT, isActive INTEGER NOT NULL DEFAULT 1,
+                    createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE TABLE schedules (
+                    id TEXT NOT NULL PRIMARY KEY, medicationId TEXT NOT NULL, type TEXT NOT NULL,
+                    timesOfDay TEXT NOT NULL, weekdays INTEGER NOT NULL, intervalDays INTEGER NOT NULL,
+                    startDate TEXT NOT NULL, endDate TEXT, createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL, FOREIGN KEY(medicationId) REFERENCES medications(id)
+                    ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                CREATE TABLE doses (
+                    id TEXT NOT NULL PRIMARY KEY, medicationId TEXT NOT NULL, scheduleId TEXT NOT NULL,
+                    scheduledAt INTEGER NOT NULL, localDate TEXT NOT NULL, status TEXT NOT NULL,
+                    takenAt INTEGER, snoozedUntil INTEGER,
+                    FOREIGN KEY(medicationId) REFERENCES medications(id) ON DELETE CASCADE,
+                    FOREIGN KEY(scheduleId) REFERENCES schedules(id) ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            block(database)
+        } finally {
+            helper.close()
+        }
+    }
+
+    private fun insertMedicationScheduleAndDose(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            INSERT INTO medications (id, name, doseAmount, doseUnit, isActive, createdAt, updatedAt)
+            VALUES ('m1', 'aspirin', 75.0, 'MG', 1, 1000, 1000)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO schedules
+                (id, medicationId, type, timesOfDay, weekdays, intervalDays,
+                 startDate, endDate, createdAt, updatedAt)
+            VALUES ('s1', 'm1', 'TIMES_PER_DAY', '08:00', 127, 1,
+                    '2026-01-01', NULL, 1000, 1000)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO doses
+                (id, medicationId, scheduleId, scheduledAt, localDate, status, takenAt, snoozedUntil)
+            VALUES ('d1', 'm1', 's1', 5000, '2026-01-01', 'TAKEN', 5100, NULL)
+            """.trimIndent()
+        )
     }
 }

@@ -28,10 +28,17 @@ never required.
 - **Adherence & punctuality stats** — how many doses you took, and how close to on-time.
 - **Refill / low-stock warnings** — optional per-medication stock tracking with a run-out
   forecast.
+- **Home dashboard & reminder health** — next dose, today's progress, low stock, notification
+  permission, exact timing, battery access and a real test reminder in one place.
 - **Discreet mode** — notifications that never name the drug, because a drug name on a lock
   screen is a diagnosis in disguise.
+- **History tools** — medication/status filters, notes, a recent adherence strip and CSV
+  export for appointments.
 - **Drug & condition autosuggest** from a bundled RxNorm-derived catalog, offline.
 - **Optional end-to-end encrypted backup & sync** via Google sign-in — see below.
+- **Verified self-updates** — release builds check GitHub Releases daily, download a newer
+  APK, verify its SHA-256 digest and signing certificate, then hand it to Android's installer
+  for user confirmation.
 
 ## Privacy & security
 

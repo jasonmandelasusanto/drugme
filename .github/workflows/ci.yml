@@ -62,7 +62,6 @@ jobs:
 
       - name: Lint
         run: ./gradlew lintDebug --stacktrace
-        continue-on-error: true
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace

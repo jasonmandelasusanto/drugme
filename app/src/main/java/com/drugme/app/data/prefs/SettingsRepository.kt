@@ -29,6 +29,10 @@ class SettingsRepository @Inject constructor(
     val onboardingComplete: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_ONBOARDED] ?: false }
 
+    /** True after the user explicitly chooses local-only use; avoids nagging every launch. */
+    val backupPromptDismissed: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_BACKUP_PROMPT_DISMISSED] ?: false }
+
     val disclaimerAccepted: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_DISCLAIMER] ?: false }
 
@@ -43,6 +47,7 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setDiscreetNotifications(value: Boolean) = put(KEY_DISCREET, value)
     suspend fun setOnboardingComplete(value: Boolean) = put(KEY_ONBOARDED, value)
+    suspend fun setBackupPromptDismissed(value: Boolean) = put(KEY_BACKUP_PROMPT_DISMISSED, value)
     suspend fun setDisclaimerAccepted(value: Boolean) = put(KEY_DISCLAIMER, value)
     suspend fun setBatteryPromptShown(value: Boolean) = put(KEY_BATTERY_PROMPT, value)
     suspend fun setCatalogLoaded(value: Boolean) = put(KEY_CATALOG_LOADED, value)
@@ -55,6 +60,7 @@ class SettingsRepository @Inject constructor(
     private companion object {
         val KEY_DISCREET = booleanPreferencesKey("discreet_notifications")
         val KEY_ONBOARDED = booleanPreferencesKey("onboarding_complete")
+        val KEY_BACKUP_PROMPT_DISMISSED = booleanPreferencesKey("backup_prompt_dismissed")
         val KEY_DISCLAIMER = booleanPreferencesKey("disclaimer_accepted")
         val KEY_BATTERY_PROMPT = booleanPreferencesKey("battery_prompt_shown")
         val KEY_CATALOG_LOADED = booleanPreferencesKey("catalog_loaded")

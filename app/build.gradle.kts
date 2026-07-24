@@ -17,6 +17,14 @@ val keystoreProps = Properties().apply {
     if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
 
+val appVersionName = providers.gradleProperty("versionName").orNull ?: "0.1.0"
+val appVersionParts = appVersionName.substringBefore('-').split('.')
+    .map { it.toIntOrNull() ?: 0 }
+val appVersionCode =
+    appVersionParts.getOrElse(0) { 0 } * 1_000_000 +
+        appVersionParts.getOrElse(1) { 0 } * 1_000 +
+        appVersionParts.getOrElse(2) { 0 }
+
 android {
     namespace = "com.drugme.app"
     compileSdk = 36
@@ -25,8 +33,8 @@ android {
         applicationId = "com.drugme.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode.coerceAtLeast(1)
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

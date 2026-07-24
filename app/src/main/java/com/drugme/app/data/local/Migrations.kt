@@ -91,4 +91,23 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
-val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2)
+/**
+ * v2 -> v3
+ *  - dose snapshots keep historical amounts truthful after prescription edits.
+ *  - schedule amount overrides support different morning/evening doses.
+ *  - stock unit/consumption decouple "500 mg taken" from "one tablet used".
+ *  - per-dose notes add context to History.
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE medications ADD COLUMN stockUnit TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE medications ADD COLUMN stockPerDose REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE schedules ADD COLUMN doseAmount REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE schedules ADD COLUMN doseUnit TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE doses ADD COLUMN doseAmount REAL DEFAULT NULL")
+        db.execSQL("ALTER TABLE doses ADD COLUMN doseUnit TEXT DEFAULT NULL")
+        db.execSQL("ALTER TABLE doses ADD COLUMN note TEXT DEFAULT NULL")
+    }
+}
+
+val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)

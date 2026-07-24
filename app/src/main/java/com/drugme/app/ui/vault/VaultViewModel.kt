@@ -38,6 +38,7 @@ data class VaultUiState(
 
     /** Null until read from disk, so the first frame doesn't flash onboarding at a returning user. */
     val onboardingComplete: Boolean? = null,
+    val backupPromptDismissed: Boolean? = null,
 )
 
 @HiltViewModel
@@ -58,6 +59,11 @@ class VaultViewModel @Inject constructor(
                 // refresh() pushes its result into VaultManager.state, which is observed
                 // below — so the return value is deliberately ignored here.
                 vault.refresh(user?.uid)
+            }
+        }
+        viewModelScope.launch {
+            settings.backupPromptDismissed.collect { dismissed ->
+                _state.value = _state.value.copy(backupPromptDismissed = dismissed)
             }
         }
         viewModelScope.launch {
@@ -83,6 +89,14 @@ class VaultViewModel @Inject constructor(
 
     fun completeOnboarding() {
         viewModelScope.launch { settings.setOnboardingComplete(true) }
+    }
+
+    fun dismissBackupPrompt() {
+        viewModelScope.launch { settings.setBackupPromptDismissed(true) }
+    }
+
+    fun showBackupPrompt() {
+        viewModelScope.launch { settings.setBackupPromptDismissed(false) }
     }
 
     fun checkPassphrase(value: String) = PassphraseCheck(
@@ -165,7 +179,18 @@ class VaultViewModel @Inject constructor(
             // Forget the key, keep the data: signing out is not a request to erase a
             // medication history, and the app is fully usable offline without an account.
             vault.forget()
-            _state.value = VaultUiState()
+            // Preserve settings already collected from DataStore. Replacing the whole
+            // state with defaults would put onboarding/backupPromptDismissed back to null;
+            // those flows do not re-emit until their stored value changes, leaving the app
+            // on an infinite loading spinner after signing out from the unlock screen.
+            _state.value = _state.value.copy(
+                user = null,
+                vault = VaultState.NoUser,
+                busy = false,
+                error = null,
+                recoveryCode = null,
+                wrongSecret = false,
+            )
         }
     }
 

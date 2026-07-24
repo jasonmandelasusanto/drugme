@@ -9,6 +9,7 @@ import com.drugme.app.data.local.dao.MedicationWithSchedules
 import com.drugme.app.data.repo.AccountDeleter
 import com.drugme.app.data.repo.DoseRepository
 import com.drugme.app.data.repo.MedicationRepository
+import com.drugme.app.data.prefs.SettingsRepository
 import com.drugme.app.data.sync.SyncEngine
 import com.drugme.app.domain.model.DoseStatus
 import com.drugme.app.domain.schedule.Forecast
@@ -73,6 +74,7 @@ data class ProfileState(
     val deleting: Boolean = false,
     val deleted: Boolean = false,
     val error: String? = null,
+    val discreetNotifications: Boolean = false,
 )
 
 @HiltViewModel
@@ -82,6 +84,7 @@ class ProfileViewModel @Inject constructor(
     private val medicationRepository: MedicationRepository,
     private val syncEngine: SyncEngine,
     private val accountDeleter: AccountDeleter,
+    private val settings: SettingsRepository,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -99,9 +102,10 @@ class ProfileViewModel @Inject constructor(
                 doseRepository.observeTotalsAllTime(),
                 doseRepository.observeTotalsBetween(weekStart(), today()),
                 medicationRepository.observeAll(),
-            ) { user, allTime, week, meds ->
-                Quad(user, allTime, week, meds)
-            }.collect { (user, allTime, week, meds) ->
+                settings.discreetNotifications,
+            ) { user, allTime, week, meds, discreet ->
+                Penta(user, allTime, week, meds, discreet)
+            }.collect { (user, allTime, week, meds, discreet) ->
                 val trackingDays = trackingSpanDays()
                 extras.value = extras.value.copy(
                     user = user,
@@ -113,6 +117,7 @@ class ProfileViewModel @Inject constructor(
                     forecasts = meds.mapNotNull { m ->
                         medicationRepository.forecast(m.medication.id)?.let { m.medication.id to it }
                     }.toMap(),
+                    discreetNotifications = discreet,
                 )
             }
         }
@@ -186,6 +191,18 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch { auth.signOut() }
     }
 
+    fun setDiscreetNotifications(enabled: Boolean) {
+        viewModelScope.launch { settings.setDiscreetNotifications(enabled) }
+    }
+
+    fun setMedicationActive(id: String, active: Boolean) {
+        viewModelScope.launch { medicationRepository.setActive(id, active) }
+    }
+
+    fun setStock(id: String, amount: Double?) {
+        viewModelScope.launch { medicationRepository.setStock(id, amount) }
+    }
+
     /**
      * Deletes a single medication. Cascades to its schedules and dose history — see
      * MedicationRepository.delete. The list refreshes on its own via observe().
@@ -223,7 +240,13 @@ class ProfileViewModel @Inject constructor(
     private fun today() = LocalDate.now(clock)
     private fun weekStart() = LocalDate.now(clock).minusDays(6)
 
-    private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+    private data class Penta<A, B, C, D, E>(
+        val a: A,
+        val b: B,
+        val c: C,
+        val d: D,
+        val e: E,
+    )
 
     private companion object {
         const val ON_TIME_MINUTES = 30.0
