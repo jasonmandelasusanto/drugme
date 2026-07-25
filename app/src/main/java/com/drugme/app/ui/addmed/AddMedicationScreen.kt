@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -19,6 +22,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,8 +53,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -80,6 +93,15 @@ fun AddMedicationScreen(
     viewModel: AddMedicationViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val conditionFocus = remember { FocusRequester() }
+    val doseFocus = remember { FocusRequester() }
+
+    LaunchedEffect(state.drugSelectionVersion) {
+        if (state.drugSelectionVersion > 0) conditionFocus.requestFocus()
+    }
+    LaunchedEffect(state.diseaseSelectionVersion) {
+        if (state.diseaseSelectionVersion > 0) doseFocus.requestFocus()
+    }
 
     LaunchedEffect(medicationId) {
         if (medicationId != null) viewModel.load(medicationId)
@@ -110,9 +132,9 @@ fun AddMedicationScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { DrugNameSection(state, viewModel) }
-            item { ConditionSection(state, viewModel) }
-            item { DoseSection(state, viewModel) }
+            item { EnhancedDrugNameSection(state, viewModel) }
+            item { EnhancedConditionSection(state, viewModel, conditionFocus) }
+            item { EnhancedDoseSection(state, viewModel, doseFocus) }
             item { ScheduleSection(state, viewModel) }
             item { DurationSection(state, viewModel) }
             item { StockSection(state, viewModel) }
@@ -305,6 +327,303 @@ private fun ConditionSection(state: AddMedicationState, vm: AddMedicationViewMod
                 color = MaterialTheme.colorScheme.primary,
             )
         }
+    }
+}
+
+@Composable
+private fun EnhancedDrugNameSection(state: AddMedicationState, vm: AddMedicationViewModel) {
+    val focusManager = LocalFocusManager.current
+    SectionCard(title = "Medication") {
+        OutlinedTextField(
+            value = state.name,
+            onValueChange = vm::onNameChange,
+            label = { Text("Name") },
+            placeholder = { Text("e.g. Metformin") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(
+                onNext = { focusManager.moveFocus(FocusDirection.Down) },
+            ),
+            trailingIcon = {
+                if (state.name.isNotEmpty()) {
+                    IconButton(onClick = vm::clearDrug) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear or change medication")
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { vm.onDrugFocusChanged(it.isFocused) },
+        )
+
+        if (state.name.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            AssistChip(
+                onClick = if (state.rxcui != null) vm::clearDrug else vm::dismissDrugSuggestions,
+                label = {
+                    Text(
+                        if (state.rxcui != null) "Verified RxNorm match · Change"
+                        else "Unverified free text · Use as typed"
+                    )
+                },
+            )
+        }
+
+        if (state.showDrugSuggestions) {
+            Spacer(Modifier.height(4.dp))
+            Surface(
+                tonalElevation = 2.dp,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column {
+                    if (state.name.isBlank() && state.drugSuggestions.isNotEmpty()) {
+                        Text(
+                            "Commonly selected",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                    }
+                    when (state.drugSuggestionState) {
+                        SuggestionState.LOADING ->
+                            SuggestionMessage("Searching medication sources…", loading = true)
+                        SuggestionState.EMPTY ->
+                            SuggestionMessage("No verified matches. You can keep the name you typed.")
+                        SuggestionState.OFFLINE ->
+                            SuggestionMessage("You're offline. No local match was found; you can use free text.")
+                        SuggestionState.ERROR ->
+                            SuggestionMessage("Suggestions are unavailable. This does not affect reminders.")
+                        else -> Unit
+                    }
+                    state.drugSuggestions.take(8).forEach { suggestion ->
+                        MedicationSuggestionRow(
+                            suggestion = suggestion,
+                            query = state.name,
+                            onClick = { vm.onDrugPicked(suggestion) },
+                        )
+                    }
+                    if (state.drugRemoteUnavailable) {
+                        SuggestionMessage("Showing offline matches; online RxNorm enrichment is unavailable.")
+                    }
+                    TextButton(onClick = vm::dismissDrugSuggestions, modifier = Modifier.padding(4.dp)) {
+                        Text("Use what I typed")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EnhancedConditionSection(
+    state: AddMedicationState,
+    vm: AddMedicationViewModel,
+    focusRequester: FocusRequester,
+) {
+    SectionCard(title = "What is it for?") {
+        Text(
+            "Optional. Search for your condition, or leave blank.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = state.diseaseQuery,
+            onValueChange = vm::onDiseaseQueryChange,
+            label = { Text("Condition") },
+            placeholder = { Text("e.g. Diabetes") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            trailingIcon = {
+                if (state.diseaseQuery.isNotEmpty()) {
+                    IconButton(onClick = vm::clearDisease) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear or change condition")
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .onFocusChanged { vm.onDiseaseFocusChanged(it.isFocused) },
+        )
+
+        if (state.showDiseaseSuggestions) {
+            Spacer(Modifier.height(4.dp))
+            Surface(
+                tonalElevation = 2.dp,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column {
+                    if (state.diseaseQuery.isBlank() && state.diseaseSuggestions.isNotEmpty()) {
+                        Text(
+                            "Commonly selected",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                    }
+                    when (state.diseaseSuggestionState) {
+                        SuggestionState.LOADING -> SuggestionMessage("Searching conditions…", loading = true)
+                        SuggestionState.EMPTY ->
+                            SuggestionMessage("No verified match. You can keep the condition you typed.")
+                        SuggestionState.OFFLINE ->
+                            SuggestionMessage("Condition suggestions are unavailable offline.")
+                        SuggestionState.ERROR ->
+                            SuggestionMessage("Condition suggestions could not be loaded.")
+                        else -> Unit
+                    }
+                    state.diseaseSuggestions.take(8).forEach { disease ->
+                        Text(
+                            highlightMatch(disease.name, state.diseaseQuery),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .clickable { vm.onDiseasePicked(disease) }
+                                .padding(horizontal = 12.dp, vertical = 16.dp),
+                        )
+                        HorizontalDivider()
+                    }
+                    TextButton(onClick = vm::dismissDiseaseSuggestions, modifier = Modifier.padding(4.dp)) {
+                        Text("Use what I typed")
+                    }
+                }
+            }
+        }
+
+        if (state.diseaseQuery.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            AssistChip(
+                onClick = vm::clearDisease,
+                label = {
+                    Text(
+                        if (state.selectedDisease != null) "Verified condition · Change"
+                        else "Unverified condition · Clear"
+                    )
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun EnhancedDoseSection(
+    state: AddMedicationState,
+    vm: AddMedicationViewModel,
+    focusRequester: FocusRequester,
+) {
+    SectionCard(title = "Your prescribed dose") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = state.doseAmount,
+                onValueChange = vm::onDoseAmountChange,
+                label = { Text("Amount") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.width(120.dp).focusRequester(focusRequester),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                state.doseUnit.format(state.doseAmountValue ?: 0.0),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Unit", style = MaterialTheme.typography.titleMedium)
+        UnitChips(state.doseUnit, vm::onDoseUnitChange)
+        Spacer(Modifier.height(12.dp))
+        Text("Food", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Shown on the reminder when it's time to take it",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            FoodRelation.entries.forEach { relation ->
+                FilterChip(
+                    selected = state.foodRelation == relation,
+                    onClick = { vm.onFoodRelationChange(relation) },
+                    label = { Text(relation.label) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun MedicationSuggestionRow(
+    suggestion: com.drugme.app.data.repo.DrugSuggestion,
+    query: String,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(
+            highlightMatch(suggestion.name.replaceFirstChar(Char::uppercase), query),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            "Generic: ${suggestion.genericName} · Active ingredient: ${suggestion.activeIngredient}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        suggestion.brandName?.let {
+            Text("Brand: $it", style = MaterialTheme.typography.bodyMedium)
+        }
+        listOfNotNull(suggestion.strength, suggestion.dosageForm)
+            .takeIf { it.isNotEmpty() }
+            ?.let {
+                Text(
+                    it.joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        suggestion.matchedAlias?.let {
+            Text(
+                "Also known as ${it.replaceFirstChar(Char::uppercase)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+    HorizontalDivider()
+}
+
+@Composable
+private fun SuggestionMessage(message: String, loading: Boolean = false) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+internal fun highlightMatch(text: String, query: String): AnnotatedString {
+    val needle = query.trim()
+    if (needle.isBlank()) return AnnotatedString(text)
+    val start = text.indexOf(needle, ignoreCase = true)
+    if (start < 0) return AnnotatedString(text)
+    return buildAnnotatedString {
+        append(text)
+        addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, start + needle.length)
     }
 }
 

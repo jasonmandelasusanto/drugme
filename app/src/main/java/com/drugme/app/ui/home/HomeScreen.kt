@@ -1,8 +1,5 @@
 package com.drugme.app.ui.home
 
-import android.content.Intent
-import android.provider.Settings
-
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,15 +14,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Snooze
@@ -69,13 +64,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.drugme.app.data.local.dao.DoseWithMedication
 import com.drugme.app.domain.model.DoseStatus
 import com.drugme.app.ui.theme.LocalDoseColors
 import java.time.LocalDate
-import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -87,19 +80,12 @@ private val dayFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("EEEE d MMM"
 fun HomeScreen(
     onAddMedication: () -> Unit,
     onEditMedication: (String) -> Unit,
-    onOpenHistory: () -> Unit,
-    onOpenProfile: () -> Unit,
-    onFixExactAlarms: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var adjustStock by remember { mutableStateOf<StockAlert?>(null) }
-
-    LifecycleResumeEffect(Unit) {
-        viewModel.refreshPermissionState()
-        onPauseOrDispose { }
-    }
 
     Scaffold(
         topBar = {
@@ -116,11 +102,8 @@ fun HomeScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenHistory) {
-                        Icon(Icons.Default.History, contentDescription = "History")
-                    }
-                    IconButton(onClick = onOpenProfile) {
-                        Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 },
             )
@@ -151,28 +134,6 @@ fun HomeScreen(
                     }
                 }
                 item { TodaySummary(state) }
-                item {
-                    ReminderHealthCard(
-                        health = state.health,
-                        testSent = state.testReminderSent,
-                        onTest = viewModel::sendTestReminder,
-                        onFixExact = onFixExactAlarms,
-                        onFixNotifications = {
-                            context.startActivity(
-                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                            )
-                        },
-                        onFixBattery = {
-                            runCatching {
-                                context.startActivity(
-                                    com.drugme.app.ui.onboarding.OemBatteryGuidance
-                                        .requestIgnoreBatteryOptimizationsIntent(context)
-                                )
-                            }
-                        },
-                    )
-                }
                 if (state.stockAlerts.isNotEmpty()) {
                     item { LowStockCard(state.stockAlerts, onAdjust = { adjustStock = it }) }
                 }
@@ -236,11 +197,14 @@ private fun TodaySummary(state: HomeState) {
             Text(
                 when {
                     total == 0 -> "Your day is clear"
+                    state.overdueDoses > 0 ->
+                        "${state.overdueDoses} overdue dose${if (state.overdueDoses == 1) "" else "s"} need attention"
                     next == null -> "All scheduled doses handled"
                     else -> "Next: ${next.medication.name.replaceFirstChar { it.uppercase() }}"
                 },
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = if (state.overdueDoses > 0) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onPrimaryContainer,
             )
             if (next != null) {
                 Text(
@@ -296,75 +260,6 @@ private fun AppUpdateCard(
                 FilledTonalButton(onClick = onInstall) { Text("Review and install") }
             }
         }
-    }
-}
-
-@Composable
-private fun ReminderHealthCard(
-    health: ReminderHealth,
-    testSent: Boolean?,
-    onTest: () -> Unit,
-    onFixExact: () -> Unit,
-    onFixNotifications: () -> Unit,
-    onFixBattery: () -> Unit,
-) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.HealthAndSafety,
-                    contentDescription = null,
-                    tint = if (health.healthy) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                )
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text("Reminder health", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        if (health.healthy) "Ready to remind you" else "One or more settings need attention",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            HealthRow("Notifications", health.notificationsOk, onFixNotifications)
-            HealthRow("Exact timing", health.exactAlarmsOk, onFixExact)
-            HealthRow("Background access", !health.batteryOptimized, onFixBattery)
-            health.nextReminder?.let {
-                Text(
-                    "Next alarm: ${formatReminderInstant(it)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onTest, enabled = health.notificationsOk) {
-                Text("Send test reminder")
-            }
-            testSent?.let {
-                Text(
-                    if (it) "Test reminder sent." else "Notifications are blocked. Fix them above.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (it) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HealthRow(label: String, ok: Boolean, onFix: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            if (ok) Icons.Default.CheckCircle else Icons.Default.Warning,
-            contentDescription = null,
-            tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(label, modifier = Modifier.weight(1f))
-        if (!ok) TextButton(onClick = onFix) { Text("Fix") }
     }
 }
 
@@ -428,12 +323,6 @@ private fun StockAdjustmentDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
-}
-
-private fun formatReminderInstant(instant: Instant): String {
-    val local = instant.atZone(ZoneId.systemDefault())
-    return "${local.toLocalDate().format(DateTimeFormatter.ofPattern("EEE d MMM"))} at " +
-        local.toLocalTime().format(timeFmt)
 }
 
 @Composable

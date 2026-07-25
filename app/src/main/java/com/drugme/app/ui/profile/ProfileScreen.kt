@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Inventory2
@@ -25,6 +24,7 @@ import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -68,15 +68,15 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    onNavigateBack: () -> Unit,
-    onEditMedication: (String) -> Unit,
+    onOpenMedications: () -> Unit,
+    onOpenSchedule: () -> Unit,
+    onOpenSettings: () -> Unit,
     onSignIn: () -> Unit,
     onSignedOut: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
-    var pendingDelete by remember { mutableStateOf<MedicationEntity?>(null) }
 
     LaunchedEffect(state.deleted) {
         if (state.deleted) onSignedOut()
@@ -86,9 +86,9 @@ fun ProfileScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Profile") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 },
             )
@@ -110,11 +110,10 @@ fun ProfileScreen(
             item { PunctualityCard(state) }
             item { UsageCard(state) }
             item {
-                MedicationsCard(
-                    state,
-                    onEditMedication,
-                    onToggleActive = viewModel::setMedicationActive,
-                    onDelete = { pendingDelete = it },
+                CompactMedicationsPreview(
+                    state = state,
+                    onViewAll = onOpenMedications,
+                    onViewOverdue = onOpenSchedule,
                 )
             }
             item { DangerZone(state, onSignOut = { viewModel.signOut(); onSignedOut() }, onDelete = { confirmDelete = true }) }
@@ -134,16 +133,6 @@ fun ProfileScreen(
         )
     }
 
-    pendingDelete?.let { med ->
-        DeleteMedicationDialog(
-            name = med.name,
-            onConfirm = {
-                viewModel.deleteMedication(med.id)
-                pendingDelete = null
-            },
-            onDismiss = { pendingDelete = null },
-        )
-    }
 }
 
 @Composable
@@ -344,6 +333,65 @@ private fun UsageCard(state: ProfileState) {
                 )
             }
             HorizontalDivider()
+        }
+    }
+}
+
+@Composable
+private fun CompactMedicationsPreview(
+    state: ProfileState,
+    onViewAll: () -> Unit,
+    onViewOverdue: () -> Unit,
+) {
+    SectionCard(title = "Medications") {
+        if (state.medicationPreview.isEmpty()) {
+            Text(
+                "No medications yet.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        state.medicationPreview.take(3).forEach { item ->
+            val medication = item.medication
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        medication.name.replaceFirstChar(Char::uppercase),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        medication.doseUnit.format(medication.doseAmount),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                state.medicationRelevance[medication.id]?.let { relevance ->
+                    Text(
+                        relevance,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (relevance == "Overdue") MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            HorizontalDivider()
+        }
+
+        if (state.hiddenOverdueDoses > 0) {
+            TextButton(onClick = onViewOverdue, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "${state.hiddenOverdueDoses} more overdue " +
+                        "dose${if (state.hiddenOverdueDoses == 1) "" else "s"} · View schedule",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        TextButton(onClick = onViewAll, modifier = Modifier.fillMaxWidth()) {
+            Text("View all medications (${state.medications.size})")
         }
     }
 }

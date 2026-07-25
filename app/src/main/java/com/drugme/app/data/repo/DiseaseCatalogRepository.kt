@@ -62,7 +62,21 @@ class DiseaseCatalogRepository @Inject constructor(
         if (q.length < 2) return@withContext emptyList()
 
         runCatching {
-            dao.search(toFtsPrefixQuery(q), limit).map { DiseaseRef(it.id, it.name) }
+            val synonym = CONDITION_SYNONYMS[q.lowercase()]
+            val direct = dao.search(toFtsPrefixQuery(synonym ?: q), limit)
+                .map { DiseaseRef(it.id, it.name) }
+            if (direct.isNotEmpty() || q.length < 4) return@runCatching direct
+
+            // A small typo should not make a common diagnosis disappear. Fuzzy matching
+            // runs only after indexed search misses, so normal typing stays on the fast path.
+            dao.getAll()
+                .asSequence()
+                .map { it to fuzzyDiseaseDistance(q, it.name) }
+                .filter { (_, distance) -> distance <= maxOf(1, q.length / 4) }
+                .sortedWith(compareBy({ it.second }, { it.first.name.length }))
+                .take(limit)
+                .map { (entity, _) -> DiseaseRef(entity.id, entity.name) }
+                .toList()
         }.getOrElse {
             Log.w(TAG, "Condition search failed for '$q'", it)
             emptyList()
@@ -98,5 +112,42 @@ class DiseaseCatalogRepository @Inject constructor(
     private companion object {
         const val TAG = "DiseaseCatalogRepo"
         const val ASSET = "diseases.json"
+        val CONDITION_SYNONYMS = mapOf(
+            "high blood pressure" to "Hypertension",
+            "heart attack" to "Myocardial Infarction",
+            "type 2 diabetes" to "Diabetes Mellitus, Type 2",
+            "acid reflux" to "Gastroesophageal Reflux",
+        )
     }
+}
+
+internal fun fuzzyDiseaseDistance(query: String, candidate: String): Int {
+    val normalizedQuery = query.lowercase().trim()
+    val normalizedCandidate = candidate.lowercase()
+    val variants = buildList {
+        add(normalizedCandidate)
+        add(normalizedCandidate.take(normalizedQuery.length))
+        addAll(normalizedCandidate.split(Regex("[^\\p{L}\\p{N}]+")).filter(String::isNotBlank))
+    }
+    return variants.minOf { editDistance(normalizedQuery, it) }
+}
+
+private fun editDistance(a: String, b: String): Int {
+    if (a == b) return 0
+    if (a.isEmpty()) return b.length
+    if (b.isEmpty()) return a.length
+    var previous = IntArray(b.length + 1) { it }
+    a.forEachIndexed { row, ca ->
+        val current = IntArray(b.length + 1)
+        current[0] = row + 1
+        b.forEachIndexed { column, cb ->
+            current[column + 1] = minOf(
+                current[column] + 1,
+                previous[column + 1] + 1,
+                previous[column] + if (ca == cb) 0 else 1,
+            )
+        }
+        previous = current
+    }
+    return previous[b.length]
 }

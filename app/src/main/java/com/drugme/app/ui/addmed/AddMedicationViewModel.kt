@@ -4,8 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.drugme.app.data.local.entity.MedicationEntity
 import com.drugme.app.data.local.entity.ScheduleEntity
-import com.drugme.app.data.repo.DiseaseCatalogRepository
-import com.drugme.app.data.repo.DrugCatalogRepository
+import com.drugme.app.data.medical.AutocompleteOutcome
+import com.drugme.app.data.medical.DiseaseAutocompleteSource
+import com.drugme.app.data.medical.MedicationAutocompleteSource
 import com.drugme.app.data.repo.DrugSuggestion
 import com.drugme.app.data.repo.MedicationRepository
 import com.drugme.app.domain.model.DiseaseRef
@@ -19,8 +20,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.Clock
 import java.time.DayOfWeek
@@ -28,6 +29,15 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.util.UUID
 import javax.inject.Inject
+
+enum class SuggestionState {
+    IDLE,
+    LOADING,
+    RESULTS,
+    EMPTY,
+    OFFLINE,
+    ERROR,
+}
 
 data class AddMedicationState(
     val id: String? = null,
@@ -37,6 +47,10 @@ data class AddMedicationState(
     val rxcui: String? = null,
     val drugSuggestions: List<DrugSuggestion> = emptyList(),
     val showDrugSuggestions: Boolean = false,
+    val drugFieldFocused: Boolean = false,
+    val drugSuggestionState: SuggestionState = SuggestionState.IDLE,
+    val drugRemoteUnavailable: Boolean = false,
+    val drugSelectionVersion: Long = 0,
 
     // --- condition ---
     // The user's own statement, typed and searched independently. Deliberately NOT derived
@@ -44,7 +58,10 @@ data class AddMedicationState(
     val diseaseQuery: String = "",
     val diseaseSuggestions: List<DiseaseRef> = emptyList(),
     val showDiseaseSuggestions: Boolean = false,
+    val diseaseFieldFocused: Boolean = false,
     val selectedDisease: DiseaseRef? = null,
+    val diseaseSuggestionState: SuggestionState = SuggestionState.IDLE,
+    val diseaseSelectionVersion: Long = 0,
 
     // --- dose ---
     val doseAmount: String = "1",
@@ -94,8 +111,8 @@ data class AddMedicationState(
 @HiltViewModel
 class AddMedicationViewModel @Inject constructor(
     private val medicationRepository: MedicationRepository,
-    private val drugCatalog: DrugCatalogRepository,
-    private val diseaseCatalog: DiseaseCatalogRepository,
+    private val medicationAutocomplete: MedicationAutocompleteSource,
+    private val diseaseAutocomplete: DiseaseAutocompleteSource,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -114,14 +131,42 @@ class AddMedicationViewModel @Inject constructor(
     private fun observeDrugQuery() {
         viewModelScope.launch {
             drugQuery
-                .debounce(180) // A catalog query per keystroke thrashes SQLite for results nobody reads.
+                .debounce(220)
                 .distinctUntilChanged()
-                .map { q -> if (q.length < 2) emptyList() else drugCatalog.search(q, limit = 12) }
-                .collect { results ->
-                    _state.value = _state.value.copy(
-                        drugSuggestions = results,
-                        showDrugSuggestions = results.isNotEmpty(),
-                    )
+                .collectLatest { raw ->
+                    val q = raw.trim()
+                    if (q.isBlank()) {
+                        val popular = medicationAutocomplete.popular()
+                        if (_state.value.name.isBlank()) {
+                            _state.value = _state.value.copy(
+                                drugSuggestions = popular,
+                                drugSuggestionState = SuggestionState.IDLE,
+                                showDrugSuggestions = _state.value.drugFieldFocused,
+                            )
+                        }
+                        return@collectLatest
+                    }
+                    if (q.length < 2) {
+                        if (_state.value.name == raw) {
+                            _state.value = _state.value.copy(
+                                drugSuggestions = emptyList(),
+                                showDrugSuggestions = false,
+                                drugSuggestionState = SuggestionState.IDLE,
+                            )
+                        }
+                        return@collectLatest
+                    }
+
+                    if (_state.value.name == raw) {
+                        _state.value = _state.value.copy(
+                            drugSuggestionState = SuggestionState.LOADING,
+                            showDrugSuggestions = true,
+                            drugRemoteUnavailable = false,
+                        )
+                    }
+                    val outcome = medicationAutocomplete.search(q, limit = 12)
+                    if (_state.value.name != raw) return@collectLatest
+                    applyDrugOutcome(outcome)
                 }
         }
     }
@@ -130,15 +175,85 @@ class AddMedicationViewModel @Inject constructor(
     private fun observeDiseaseQuery() {
         viewModelScope.launch {
             diseaseQueryFlow
-                .debounce(180)
+                .debounce(220)
                 .distinctUntilChanged()
-                .map { q -> if (q.length < 2) emptyList() else diseaseCatalog.search(q, limit = 12) }
-                .collect { results ->
-                    _state.value = _state.value.copy(
-                        diseaseSuggestions = results,
-                        showDiseaseSuggestions = results.isNotEmpty(),
-                    )
+                .collectLatest { raw ->
+                    val q = raw.trim()
+                    if (q.isBlank()) {
+                        val popular = diseaseAutocomplete.popular()
+                        if (_state.value.diseaseQuery.isBlank()) {
+                            _state.value = _state.value.copy(
+                                diseaseSuggestions = popular,
+                                diseaseSuggestionState = SuggestionState.IDLE,
+                                showDiseaseSuggestions = _state.value.diseaseFieldFocused,
+                            )
+                        }
+                        return@collectLatest
+                    }
+                    if (q.length < 2) {
+                        if (_state.value.diseaseQuery == raw) {
+                            _state.value = _state.value.copy(
+                                diseaseSuggestions = emptyList(),
+                                showDiseaseSuggestions = false,
+                                diseaseSuggestionState = SuggestionState.IDLE,
+                            )
+                        }
+                        return@collectLatest
+                    }
+
+                    if (_state.value.diseaseQuery == raw) {
+                        _state.value = _state.value.copy(
+                            diseaseSuggestionState = SuggestionState.LOADING,
+                            showDiseaseSuggestions = true,
+                        )
+                    }
+                    val outcome = diseaseAutocomplete.search(q, limit = 12)
+                    if (_state.value.diseaseQuery != raw) return@collectLatest
+                    applyDiseaseOutcome(outcome)
                 }
+        }
+    }
+
+    private fun applyDrugOutcome(outcome: AutocompleteOutcome<DrugSuggestion>) {
+        _state.value = when (outcome) {
+            is AutocompleteOutcome.Results -> _state.value.copy(
+                drugSuggestions = outcome.items,
+                showDrugSuggestions = true,
+                drugSuggestionState = if (outcome.items.isEmpty()) SuggestionState.EMPTY
+                else SuggestionState.RESULTS,
+                drugRemoteUnavailable = outcome.remoteUnavailable,
+            )
+            AutocompleteOutcome.Offline -> _state.value.copy(
+                drugSuggestions = emptyList(),
+                showDrugSuggestions = true,
+                drugSuggestionState = SuggestionState.OFFLINE,
+            )
+            is AutocompleteOutcome.Error -> _state.value.copy(
+                drugSuggestions = emptyList(),
+                showDrugSuggestions = true,
+                drugSuggestionState = SuggestionState.ERROR,
+            )
+        }
+    }
+
+    private fun applyDiseaseOutcome(outcome: AutocompleteOutcome<DiseaseRef>) {
+        _state.value = when (outcome) {
+            is AutocompleteOutcome.Results -> _state.value.copy(
+                diseaseSuggestions = outcome.items,
+                showDiseaseSuggestions = true,
+                diseaseSuggestionState = if (outcome.items.isEmpty()) SuggestionState.EMPTY
+                else SuggestionState.RESULTS,
+            )
+            AutocompleteOutcome.Offline -> _state.value.copy(
+                diseaseSuggestions = emptyList(),
+                showDiseaseSuggestions = true,
+                diseaseSuggestionState = SuggestionState.OFFLINE,
+            )
+            is AutocompleteOutcome.Error -> _state.value.copy(
+                diseaseSuggestions = emptyList(),
+                showDiseaseSuggestions = true,
+                diseaseSuggestionState = SuggestionState.ERROR,
+            )
         }
     }
 
@@ -188,6 +303,7 @@ class AddMedicationViewModel @Inject constructor(
         _state.value = _state.value.copy(
             name = value,
             rxcui = if (value != _state.value.name) null else _state.value.rxcui,
+            showDrugSuggestions = true,
         )
         drugQuery.value = value
     }
@@ -200,8 +316,27 @@ class AddMedicationViewModel @Inject constructor(
             rxcui = suggestion.rxcui,
             drugSuggestions = emptyList(),
             showDrugSuggestions = false,
+            drugSuggestionState = SuggestionState.IDLE,
+            drugSelectionVersion = _state.value.drugSelectionVersion + 1,
         )
-        drugQuery.value = suggestion.name
+    }
+
+    fun clearDrug() {
+        _state.value = _state.value.copy(
+            name = "",
+            rxcui = null,
+            showDrugSuggestions = false,
+            drugSuggestionState = SuggestionState.IDLE,
+        )
+        drugQuery.value = ""
+    }
+
+    fun onDrugFocusChanged(focused: Boolean) {
+        _state.value = _state.value.copy(
+            drugFieldFocused = focused,
+            showDrugSuggestions = focused && _state.value.rxcui == null &&
+                (_state.value.drugSuggestions.isNotEmpty() || _state.value.name.length >= 2),
+        )
     }
 
     fun dismissDrugSuggestions() {
@@ -216,6 +351,7 @@ class AddMedicationViewModel @Inject constructor(
             // Editing the text detaches the selection, so a stored MeSH id can't drift away
             // from the words on screen.
             selectedDisease = if (value != _state.value.selectedDisease?.name) null else _state.value.selectedDisease,
+            showDiseaseSuggestions = true,
         )
         diseaseQueryFlow.value = value
     }
@@ -226,13 +362,27 @@ class AddMedicationViewModel @Inject constructor(
             diseaseQuery = disease.name,
             diseaseSuggestions = emptyList(),
             showDiseaseSuggestions = false,
+            diseaseSuggestionState = SuggestionState.IDLE,
+            diseaseSelectionVersion = _state.value.diseaseSelectionVersion + 1,
         )
-        diseaseQueryFlow.value = disease.name
     }
 
     fun clearDisease() {
-        _state.value = _state.value.copy(selectedDisease = null, diseaseQuery = "", showDiseaseSuggestions = false)
+        _state.value = _state.value.copy(
+            selectedDisease = null,
+            diseaseQuery = "",
+            showDiseaseSuggestions = false,
+            diseaseSuggestionState = SuggestionState.IDLE,
+        )
         diseaseQueryFlow.value = ""
+    }
+
+    fun onDiseaseFocusChanged(focused: Boolean) {
+        _state.value = _state.value.copy(
+            diseaseFieldFocused = focused,
+            showDiseaseSuggestions = focused && _state.value.selectedDisease == null &&
+                (_state.value.diseaseSuggestions.isNotEmpty() || _state.value.diseaseQuery.length >= 2),
+        )
     }
 
     fun dismissDiseaseSuggestions() {
@@ -369,7 +519,8 @@ class AddMedicationViewModel @Inject constructor(
                     // turned off, in which case it is meaningless.
                     refillNotifiedAt = if (s.trackStock) existing?.medication?.refillNotifiedAt else null,
                     diseaseId = s.selectedDisease?.id,
-                    diseaseName = s.selectedDisease?.name,
+                    diseaseName = s.selectedDisease?.name
+                        ?: s.diseaseQuery.trim().takeIf(String::isNotBlank),
                     notes = s.notes.trim().ifBlank { null },
                     isActive = existing?.medication?.isActive ?: true,
                     createdAt = existing?.medication?.createdAt ?: now,

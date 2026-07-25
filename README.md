@@ -28,13 +28,14 @@ never required.
 - **Adherence & punctuality stats** — how many doses you took, and how close to on-time.
 - **Refill / low-stock warnings** — optional per-medication stock tracking with a run-out
   forecast.
-- **Home dashboard & reminder health** — next dose, today's progress, low stock, notification
-  permission, exact timing, battery access and a real test reminder in one place.
+- **Focused dashboard** — next dose, today's progress, overdue doses and important low-stock
+  alerts, with reminder diagnostics and testing kept in Settings.
 - **Discreet mode** — notifications that never name the drug, because a drug name on a lock
   screen is a diagnosis in disguise.
-- **History tools** — medication/status filters, notes, a recent adherence strip and CSV
-  export for appointments.
-- **Drug & condition autosuggest** from a bundled RxNorm-derived catalog, offline.
+- **Schedule & history tools** — upcoming, overdue, missed and completed doses with
+  date/medication/status filters, notes, an adherence strip and CSV export.
+- **Global medication lookup** — offline RxNorm-derived suggestions enhanced by RxNorm,
+  with synonym/typo support and attributed MedlinePlus/openFDA/DailyMed information.
 - **Optional end-to-end encrypted backup & sync** via Google sign-in — see below.
 - **Verified self-updates** — release builds check GitHub Releases daily, download a newer
   APK, verify its SHA-256 digest and signing certificate, then hand it to Android's installer
@@ -77,6 +78,11 @@ Requires **JDK 17** and the Android SDK.
 To enable sign-in and cloud sync, drop a real `app/google-services.json` from your own Firebase
 project into place (it's gitignored). Backend hardening steps are in
 [docs/firebase-hardening.md](docs/firebase-hardening.md).
+
+Medication lookup does not require an API key. RxNorm, MedlinePlus Connect and openFDA are
+queried directly over HTTPS; failures never block saving a medication or scheduling reminders.
+Official information is cached for 24 hours, with a maximum seven-day cached fallback while
+offline. openFDA/DailyMed sections are labeled as U.S. drug labeling in the app.
 
 ## License
 

@@ -23,6 +23,12 @@ data class DrugSuggestion(
     val diseases: List<DiseaseRef>,
     /** Set when the user's query matched via an alias, e.g. typing "paracetamol". */
     val matchedAlias: String? = null,
+    val genericName: String = name,
+    val brandName: String? = null,
+    val activeIngredient: String = genericName,
+    val strength: String? = null,
+    val dosageForm: String? = null,
+    val sourceOrganization: String = "U.S. National Library of Medicine RxNorm",
 )
 
 @Singleton

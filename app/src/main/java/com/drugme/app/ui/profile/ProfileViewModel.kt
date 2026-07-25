@@ -69,6 +69,9 @@ data class ProfileState(
     val punctuality: Punctuality = Punctuality(),
     val usage: List<MedicationUsage> = emptyList(),
     val medications: List<MedicationWithSchedules> = emptyList(),
+    val medicationPreview: List<MedicationWithSchedules> = emptyList(),
+    val medicationRelevance: Map<String, String> = emptyMap(),
+    val hiddenOverdueDoses: Int = 0,
     val forecasts: Map<String, Forecast> = emptyMap(),
     val trackingSinceDays: Int = 0,
     val deleting: Boolean = false,
@@ -105,8 +108,27 @@ class ProfileViewModel @Inject constructor(
                 settings.discreetNotifications,
             ) { user, allTime, week, meds, discreet ->
                 Penta(user, allTime, week, meds, discreet)
-            }.collect { (user, allTime, week, meds, discreet) ->
+            }.combine(doseRepository.observeForDate(today())) { profile, doses ->
+                profile to doses
+            }.collect { (profile, doses) ->
+                val (user, allTime, week, meds, discreet) = profile
                 val trackingDays = trackingSpanDays()
+                val now = clock.instant()
+                val pending = doses.filter { it.dose.status == DoseStatus.PENDING }
+                val overdueMedicationIds = pending
+                    .filter { it.dose.effectiveAt.isBefore(now) }
+                    .sortedBy { it.dose.effectiveAt }
+                    .map { it.medication.id }
+                    .distinct()
+                val upcomingMedicationIds = pending
+                    .filterNot { it.dose.effectiveAt.isBefore(now) }
+                    .sortedBy { it.dose.effectiveAt }
+                    .map { it.medication.id }
+                    .distinct()
+                val priorityIds = (overdueMedicationIds + upcomingMedicationIds +
+                    meds.filter { it.medication.isActive }.map { it.medication.id } +
+                    meds.map { it.medication.id }).distinct()
+                val previewIds = priorityIds.take(3)
                 extras.value = extras.value.copy(
                     user = user,
                     medications = meds,
@@ -118,6 +140,16 @@ class ProfileViewModel @Inject constructor(
                         medicationRepository.forecast(m.medication.id)?.let { m.medication.id to it }
                     }.toMap(),
                     discreetNotifications = discreet,
+                    medicationPreview = previewIds.mapNotNull { id ->
+                        meds.firstOrNull { it.medication.id == id }
+                    },
+                    medicationRelevance = buildMap {
+                        overdueMedicationIds.forEach { put(it, "Overdue") }
+                        upcomingMedicationIds.filterNot(::containsKey).forEach { put(it, "Upcoming") }
+                    },
+                    hiddenOverdueDoses = pending.count {
+                        it.dose.effectiveAt.isBefore(now) && it.medication.id !in previewIds
+                    },
                 )
             }
         }

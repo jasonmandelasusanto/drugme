@@ -30,6 +30,9 @@ interface DiseaseCatalogDao {
     @Query("SELECT * FROM disease_catalog WHERE id = :id")
     suspend fun getById(id: String): DiseaseCatalogEntity?
 
+    @Query("SELECT * FROM disease_catalog ORDER BY LENGTH(name) ASC")
+    suspend fun getAll(): List<DiseaseCatalogEntity>
+
     @Query("SELECT COUNT(*) FROM disease_catalog")
     suspend fun count(): Int
 

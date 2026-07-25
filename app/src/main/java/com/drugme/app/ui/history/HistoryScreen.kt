@@ -16,13 +16,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,7 +64,7 @@ private val stampFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE d MMM
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
-    onNavigateBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: HistoryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -74,18 +74,16 @@ fun HistoryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("History") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
+                title = { Text("Schedule") },
                 actions = {
                     IconButton(
                         onClick = { shareHistory(context, state.entries) },
                         enabled = state.entries.isNotEmpty(),
                     ) {
                         Icon(Icons.Default.Share, contentDescription = "Export history")
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 },
             )
@@ -123,9 +121,35 @@ fun HistoryScreen(
                 item { CalendarStrip(state.calendar) }
             }
             item { AdherenceCard(state) }
-            items(state.entries, key = { it.dose.id }) { item ->
-                HistoryRow(item, onEditNote = { noteItem = item })
-            }
+            scheduleSection(
+                title = "Overdue",
+                entries = state.entries.filter {
+                    it.dose.status == DoseStatus.PENDING && it.dose.effectiveAt.isBefore(state.now)
+                },
+                onEditNote = { noteItem = it },
+            )
+            scheduleSection(
+                title = "Upcoming",
+                entries = state.entries.filter {
+                    it.dose.status == DoseStatus.PENDING && !it.dose.effectiveAt.isBefore(state.now)
+                }.sortedBy { it.dose.effectiveAt },
+                onEditNote = { noteItem = it },
+            )
+            scheduleSection(
+                title = "Missed",
+                entries = state.entries.filter { it.dose.status == DoseStatus.MISSED },
+                onEditNote = { noteItem = it },
+            )
+            scheduleSection(
+                title = "Taken",
+                entries = state.entries.filter { it.dose.status == DoseStatus.TAKEN },
+                onEditNote = { noteItem = it },
+            )
+            scheduleSection(
+                title = "Skipped",
+                entries = state.entries.filter { it.dose.status == DoseStatus.SKIPPED },
+                onEditNote = { noteItem = it },
+            )
             if (state.entries.isEmpty()) {
                 item {
                     Text(
@@ -180,7 +204,7 @@ private fun HistoryFilters(state: HistoryState, viewModel: HistoryViewModel) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(DoseStatus.TAKEN, DoseStatus.MISSED, DoseStatus.SKIPPED).forEach { status ->
+            listOf(DoseStatus.PENDING, DoseStatus.TAKEN, DoseStatus.MISSED, DoseStatus.SKIPPED).forEach { status ->
                 FilterChip(
                     selected = status in state.statuses,
                     onClick = { viewModel.toggleStatus(status) },
@@ -188,6 +212,29 @@ private fun HistoryFilters(state: HistoryState, viewModel: HistoryViewModel) {
                 )
             }
         }
+        if (state.days != 7 || state.query.isNotBlank() ||
+            state.medicationId != null || state.statuses.isNotEmpty()
+        ) {
+            TextButton(onClick = viewModel::clearFilters) { Text("Clear filters") }
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.scheduleSection(
+    title: String,
+    entries: List<com.drugme.app.data.local.dao.DoseWithMedication>,
+    onEditNote: (com.drugme.app.data.local.dao.DoseWithMedication) -> Unit,
+) {
+    if (entries.isEmpty()) return
+    item(key = "header-$title") {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+    items(entries, key = { "$title-${it.dose.id}" }) { item ->
+        HistoryRow(item, onEditNote = { onEditNote(item) })
     }
 }
 

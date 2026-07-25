@@ -2,7 +2,6 @@ package com.drugme.app.ui.history
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewModelScope
 import com.drugme.app.data.local.dao.DoseWithMedication
 import com.drugme.app.data.repo.DoseRepository
 import com.drugme.app.domain.model.DoseStatus
@@ -16,6 +15,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
 import javax.inject.Inject
 
@@ -48,6 +48,7 @@ data class HistoryState(
     val statuses: Set<DoseStatus> = emptySet(),
     val medications: List<Pair<String, String>> = emptyList(),
     val calendar: List<CalendarDay> = emptyList(),
+    val now: Instant = Instant.EPOCH,
 )
 
 data class CalendarDay(
@@ -76,7 +77,8 @@ class HistoryViewModel @Inject constructor(
         }.flatMapLatest { filters ->
             val today = LocalDate.now(clock)
             val from = today.minusDays(filters.days.toLong() - 1)
-            doseRepository.observeHistory(from, today).map { all ->
+            val through = today.plusDays(30)
+            doseRepository.observeHistory(from, through).map { all ->
                 // Only past-or-present doses count toward adherence; a dose due tonight is
                 // not evidence of anything yet.
                 val now = clock.instant()
@@ -112,6 +114,7 @@ class HistoryViewModel @Inject constructor(
                             skipped = entries.count { it.dose.status == DoseStatus.SKIPPED },
                         )
                     }.reversed(),
+                    now = now,
                 )
             }
         }.stateIn(
@@ -136,6 +139,13 @@ class HistoryViewModel @Inject constructor(
         statuses.value = statuses.value.toMutableSet().apply {
             if (!add(status)) remove(status)
         }
+    }
+
+    fun clearFilters() {
+        windowDays.value = 7
+        query.value = ""
+        medicationId.value = null
+        statuses.value = emptySet()
     }
 
     fun setNote(doseId: String, note: String?) {
