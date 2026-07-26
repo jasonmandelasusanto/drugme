@@ -80,6 +80,9 @@ val LocalDoseColors = staticCompositionLocalOf {
     DoseColors(DoseTakenLight, DoseMissedLight, DosePendingLight, DoseSkippedLight)
 }
 
+internal fun drugMeColorScheme(darkTheme: Boolean) =
+    if (darkTheme) DarkColors else LightColors
+
 @Composable
 fun DrugMeTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -87,7 +90,7 @@ fun DrugMeTheme(
 ) {
     // Dynamic color is intentionally not used: the brand is blue-and-white, and
     // wallpaper-derived schemes would let the dose-state accents drift.
-    val colors = if (darkTheme) DarkColors else LightColors
+    val colors = drugMeColorScheme(darkTheme)
     val doseColors = if (darkTheme) {
         DoseColors(DoseTakenDark, DoseMissedDark, DosePendingDark, DoseSkippedDark)
     } else {
@@ -98,7 +101,10 @@ fun DrugMeTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
         }
     }
 

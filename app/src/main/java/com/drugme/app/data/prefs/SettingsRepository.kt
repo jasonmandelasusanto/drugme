@@ -26,6 +26,13 @@ class SettingsRepository @Inject constructor(
     val discreetNotifications: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_DISCREET] ?: false }
 
+    /**
+     * Null means the user has not chosen yet, so the UI follows the device theme. Once
+     * chosen, the explicit light/dark value is retained across launches.
+     */
+    val darkMode: Flow<Boolean?> =
+        context.dataStore.data.map { it[KEY_DARK_MODE] }
+
     val onboardingComplete: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_ONBOARDED] ?: false }
 
@@ -46,6 +53,7 @@ class SettingsRepository @Inject constructor(
         context.dataStore.data.map { it[KEY_DISEASE_CATALOG_LOADED] ?: false }
 
     suspend fun setDiscreetNotifications(value: Boolean) = put(KEY_DISCREET, value)
+    suspend fun setDarkMode(value: Boolean) = put(KEY_DARK_MODE, value)
     suspend fun setOnboardingComplete(value: Boolean) = put(KEY_ONBOARDED, value)
     suspend fun setBackupPromptDismissed(value: Boolean) = put(KEY_BACKUP_PROMPT_DISMISSED, value)
     suspend fun setDisclaimerAccepted(value: Boolean) = put(KEY_DISCLAIMER, value)
@@ -59,6 +67,7 @@ class SettingsRepository @Inject constructor(
 
     private companion object {
         val KEY_DISCREET = booleanPreferencesKey("discreet_notifications")
+        val KEY_DARK_MODE = booleanPreferencesKey("dark_mode")
         val KEY_ONBOARDED = booleanPreferencesKey("onboarding_complete")
         val KEY_BACKUP_PROMPT_DISMISSED = booleanPreferencesKey("backup_prompt_dismissed")
         val KEY_DISCLAIMER = booleanPreferencesKey("disclaimer_accepted")

@@ -51,7 +51,11 @@ fun DrugMeApp(
             ) { CircularProgressIndicator() }
 
             state.onboardingComplete == false ->
-                OnboardingScreen(onFinished = viewModel::completeOnboarding)
+                OnboardingScreen(
+                    savedDarkMode = state.darkMode,
+                    onDarkModeSelected = viewModel::setDarkMode,
+                    onFinished = viewModel::completeOnboarding,
+                )
 
             // Shown once, right after setup, and never again.
             state.recoveryCode != null -> RecoveryCodeScreen(

@@ -2,6 +2,9 @@ package com.drugme.app.ui.history
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,10 +16,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Schedule
@@ -45,9 +51,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
@@ -55,11 +66,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.drugme.app.domain.model.DoseStatus
 import com.drugme.app.ui.theme.LocalDoseColors
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.io.File
 
 private val stampFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE d MMM · HH:mm")
+
+private val monthFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("MMMM yyyy")
+private val selectedDateFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("EEEE, d MMMM")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,10 +92,10 @@ fun HistoryScreen(
                 title = { Text("Schedule") },
                 actions = {
                     IconButton(
-                        onClick = { shareHistory(context, state.entries) },
-                        enabled = state.entries.isNotEmpty(),
+                        onClick = { shareHistory(context, state.exportEntries) },
+                        enabled = state.exportEntries.isNotEmpty(),
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = "Export history")
+                        Icon(Icons.Default.Share, contentDescription = "Export displayed month")
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -94,17 +109,18 @@ fun HistoryScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(7, 30, 90).forEach { d ->
-                        FilterChip(
-                            selected = state.days == d,
-                            onClick = { viewModel.setWindow(d) },
-                            label = { Text("$d days") },
-                        )
-                    }
+            if (state.calendar.isNotEmpty()) {
+                item {
+                    MonthCalendar(
+                        state = state,
+                        onPreviousMonth = viewModel::showPreviousMonth,
+                        onNextMonth = viewModel::showNextMonth,
+                        onToday = viewModel::showToday,
+                        onSelectDate = viewModel::selectDate,
+                    )
                 }
             }
+            item { AdherenceCard(state) }
             item {
                 OutlinedTextField(
                     value = state.query,
@@ -117,10 +133,14 @@ fun HistoryScreen(
             item {
                 HistoryFilters(state, viewModel)
             }
-            if (state.calendar.isNotEmpty()) {
-                item { CalendarStrip(state.calendar) }
+            item {
+                Text(
+                    state.selectedDate.format(selectedDateFmt),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             }
-            item { AdherenceCard(state) }
             scheduleSection(
                 title = "Overdue",
                 entries = state.entries.filter {
@@ -153,7 +173,7 @@ fun HistoryScreen(
             if (state.entries.isEmpty()) {
                 item {
                     Text(
-                        "No doses recorded in this period.",
+                        "No doses match this day and your current filters.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -212,9 +232,7 @@ private fun HistoryFilters(state: HistoryState, viewModel: HistoryViewModel) {
                 )
             }
         }
-        if (state.days != 7 || state.query.isNotBlank() ||
-            state.medicationId != null || state.statuses.isNotEmpty()
-        ) {
+        if (state.query.isNotBlank() || state.medicationId != null || state.statuses.isNotEmpty()) {
             TextButton(onClick = viewModel::clearFilters) { Text("Clear filters") }
         }
     }
@@ -239,27 +257,125 @@ private fun androidx.compose.foundation.lazy.LazyListScope.scheduleSection(
 }
 
 @Composable
-private fun CalendarStrip(days: List<CalendarDay>) {
-    Column {
-        Text("Recent pattern", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(6.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(days, key = { it.date.toString() }) { day ->
-                val color = when {
-                    day.missed > 0 -> LocalDoseColors.current.missed
-                    day.taken > 0 && day.skipped == 0 -> LocalDoseColors.current.taken
-                    day.skipped > 0 -> LocalDoseColors.current.skipped
-                    else -> MaterialTheme.colorScheme.surfaceVariant
+internal fun MonthCalendar(
+    state: HistoryState,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onToday: () -> Unit,
+    onSelectDate: (LocalDate) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onPreviousMonth) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month")
                 }
-                Card(colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.16f))) {
-                    Column(
-                        Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(day.date.format(DateTimeFormatter.ofPattern("EEE")), style = MaterialTheme.typography.labelMedium)
-                        Text(day.date.dayOfMonth.toString(), fontWeight = FontWeight.SemiBold)
-                        Text("${day.taken}/${day.taken + day.missed + day.skipped}", style = MaterialTheme.typography.labelSmall)
+                Text(
+                    state.displayedMonth.format(monthFmt),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onToday) { Text("Today") }
+                IconButton(onClick = onNextMonth) {
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Next month")
+                }
+            }
+            Row(Modifier.fillMaxWidth()) {
+                listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach { label ->
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+                    )
+                }
+            }
+            state.calendar.chunked(7).forEach { week ->
+                Row(Modifier.fillMaxWidth().height(54.dp)) {
+                    week.forEach { day ->
+                        CalendarDayCell(
+                            day = day,
+                            isSelected = day.date == state.selectedDate,
+                            isToday = day.date == state.today,
+                            onClick = { onSelectDate(day.date) },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarDayCell(
+    day: CalendarDay,
+    isSelected: Boolean,
+    isToday: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(10.dp)
+    val medicationLabel = when (day.medicationCount) {
+        0 -> "no medications scheduled"
+        1 -> "1 medication scheduled"
+        else -> "${day.medicationCount} medications scheduled"
+    }
+    val background = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        Color.Transparent
+    }
+    val todayBorder = if (isToday && !isSelected) {
+        Modifier.border(1.dp, MaterialTheme.colorScheme.primary, shape)
+    } else {
+        Modifier
+    }
+
+    Column(
+        modifier = modifier
+            .padding(2.dp)
+            .then(todayBorder)
+            .background(background, shape)
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription =
+                    "${day.date.format(selectedDateFmt)}, $medicationLabel"
+                selected = isSelected
+            }
+            .alpha(if (day.inDisplayedMonth) 1f else 0.42f)
+            .padding(vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            day.date.dayOfMonth.toString(),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (isSelected || isToday) FontWeight.SemiBold else FontWeight.Normal,
+        )
+        Spacer(Modifier.height(4.dp))
+        if (day.medicationCount > 0) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                repeat(minOf(day.medicationCount, 4)) {
+                    Box(
+                        Modifier
+                            .size(5.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    )
+                }
+                if (day.medicationCount > 4) {
+                    Text(
+                        "+${day.medicationCount - 4}",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
             }
         }
@@ -277,7 +393,7 @@ private fun AdherenceCard(state: HistoryState) {
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                "Last ${state.days} days",
+                state.displayedMonth.format(monthFmt),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )

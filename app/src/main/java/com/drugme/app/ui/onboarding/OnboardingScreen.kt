@@ -21,6 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryAlert
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.foundation.Image
@@ -32,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -49,22 +52,31 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 /**
- * First-run flow: the medical disclaimer, then the two things that decide whether
- * reminders actually arrive.
+ * First-run flow: the medical disclaimer, an appearance choice, then the two things that
+ * decide whether reminders actually arrive.
  */
 @Composable
-fun OnboardingScreen(onFinished: () -> Unit) {
+fun OnboardingScreen(
+    savedDarkMode: Boolean?,
+    onDarkModeSelected: (Boolean) -> Unit,
+    onFinished: () -> Unit,
+) {
     var step by remember { mutableStateOf(0) }
     val context = LocalContext.current
 
     when (step) {
         0 -> DisclaimerStep(onAccept = { step = 1 })
-        1 -> RemindersStep(onNext = { step = 2 })
+        1 -> AppearanceStep(
+            savedDarkMode = savedDarkMode,
+            onDarkModeSelected = onDarkModeSelected,
+            onNext = { step = 2 },
+        )
+        2 -> RemindersStep(onNext = { step = 3 })
         else -> BatteryStep(context = context, onFinish = onFinished)
     }
 }
 
-private const val ONBOARDING_STEPS = 3
+private const val ONBOARDING_STEPS = 4
 
 /**
  * Step progress for the onboarding flow.
@@ -132,6 +144,73 @@ private fun DisclaimerStep(onAccept: () -> Unit) {
 }
 
 @Composable
+internal fun AppearanceStep(
+    savedDarkMode: Boolean?,
+    onDarkModeSelected: (Boolean) -> Unit,
+    onNext: () -> Unit,
+) {
+    var selectedDarkMode by remember(savedDarkMode) { mutableStateOf(savedDarkMode) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        OnboardingProgress(step = 2)
+        Icon(
+            if (selectedDarkMode == true) Icons.Default.DarkMode else Icons.Default.LightMode,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(40.dp),
+        )
+        Spacer(Modifier.height(12.dp))
+        Text("Choose your appearance", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Pick the look that feels most comfortable. You can change it any time in Settings.",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Spacer(Modifier.height(20.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            FilterChip(
+                selected = selectedDarkMode == false,
+                onClick = {
+                    selectedDarkMode = false
+                    onDarkModeSelected(false)
+                },
+                label = { Text("Light") },
+                leadingIcon = {
+                    Icon(Icons.Default.LightMode, contentDescription = null)
+                },
+                modifier = Modifier.weight(1f),
+            )
+            FilterChip(
+                selected = selectedDarkMode == true,
+                onClick = {
+                    selectedDarkMode = true
+                    onDarkModeSelected(true)
+                },
+                label = { Text("Dark") },
+                leadingIcon = {
+                    Icon(Icons.Default.DarkMode, contentDescription = null)
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        Button(
+            onClick = onNext,
+            enabled = selectedDarkMode != null,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Continue")
+        }
+    }
+}
+
+@Composable
 private fun Bullet(text: String) {
     Row(Modifier.padding(vertical = 6.dp)) {
         Text("•", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
@@ -163,7 +242,7 @@ private fun RemindersStep(onNext: () -> Unit) {
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
     ) {
-        OnboardingProgress(step = 2)
+        OnboardingProgress(step = 3)
         Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(12.dp))
         Text("Reminders", style = MaterialTheme.typography.headlineMedium)
@@ -193,7 +272,7 @@ private fun BatteryStep(context: Context, onFinish: () -> Unit) {
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
     ) {
-        OnboardingProgress(step = 3)
+        OnboardingProgress(step = 4)
         Icon(Icons.Default.BatteryAlert, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(12.dp))
         Text("Keep reminders working", style = MaterialTheme.typography.headlineMedium)

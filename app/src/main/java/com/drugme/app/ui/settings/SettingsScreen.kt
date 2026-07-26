@@ -2,6 +2,7 @@ package com.drugme.app.ui.settings
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +16,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Card
@@ -35,6 +38,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -56,6 +61,7 @@ fun SettingsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val darkMode = state.darkMode ?: isSystemInDarkTheme()
 
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
@@ -79,6 +85,13 @@ fun SettingsScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            item {
+                AppearanceSetting(
+                    darkMode = darkMode,
+                    onDarkModeChange = viewModel::setDarkMode,
+                )
+            }
+
             item {
                 SectionCard(title = "Notifications & reminders") {
                     StatusRow(
@@ -207,6 +220,51 @@ fun SettingsScreen(
                         if (state.healthy) "Reminder diagnostics look healthy."
                         else "One or more reminder settings need attention.",
                         modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun AppearanceSetting(
+    darkMode: Boolean,
+    onDarkModeChange: (Boolean) -> Unit,
+) {
+    SectionCard(title = "Appearance") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (darkMode) Icons.Default.DarkMode else Icons.Default.LightMode,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text("Light / dark mode", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Choose the color scheme used throughout DrugMe.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        "Light",
+                        color = if (!darkMode) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Switch(
+                        checked = darkMode,
+                        onCheckedChange = onDarkModeChange,
+                        modifier = Modifier.semantics { contentDescription = "Dark mode" },
+                    )
+                    Text(
+                        "Dark",
+                        color = if (darkMode) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

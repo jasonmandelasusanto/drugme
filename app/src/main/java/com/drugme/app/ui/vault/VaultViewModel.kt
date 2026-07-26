@@ -39,6 +39,7 @@ data class VaultUiState(
     /** Null until read from disk, so the first frame doesn't flash onboarding at a returning user. */
     val onboardingComplete: Boolean? = null,
     val backupPromptDismissed: Boolean? = null,
+    val darkMode: Boolean? = null,
 )
 
 @HiltViewModel
@@ -85,10 +86,19 @@ class VaultViewModel @Inject constructor(
                 _state.value = _state.value.copy(onboardingComplete = done)
             }
         }
+        viewModelScope.launch {
+            settings.darkMode.collect { dark ->
+                _state.value = _state.value.copy(darkMode = dark)
+            }
+        }
     }
 
     fun completeOnboarding() {
         viewModelScope.launch { settings.setOnboardingComplete(true) }
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        viewModelScope.launch { settings.setDarkMode(enabled) }
     }
 
     fun dismissBackupPrompt() {

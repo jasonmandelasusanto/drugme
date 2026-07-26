@@ -27,6 +27,8 @@ data class ReminderSettingsState(
     val nextReminder: Instant? = null,
     val testResult: Boolean? = null,
     val discreetNotifications: Boolean = false,
+    /** Null only until the user makes an explicit appearance choice. */
+    val darkMode: Boolean? = null,
 ) {
     val healthy: Boolean
         get() = notificationsOk && exactAlarmsOk && !batteryOptimized
@@ -47,7 +49,8 @@ class SettingsViewModel @Inject constructor(
         refresh,
         testResult,
         settings.discreetNotifications,
-    ) { _, test, discreet ->
+        settings.darkMode,
+    ) { _, test, discreet, darkMode ->
         ReminderSettingsState(
             loading = false,
             notificationsOk = notifier.canNotifyReminders(),
@@ -56,6 +59,7 @@ class SettingsViewModel @Inject constructor(
             nextReminder = doseRepository.getNextPending()?.effectiveAt,
             testResult = test,
             discreetNotifications = discreet,
+            darkMode = darkMode,
         )
     }.stateIn(
         viewModelScope,
@@ -75,5 +79,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setDiscreetNotifications(enabled: Boolean) {
         viewModelScope.launch { settings.setDiscreetNotifications(enabled) }
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        viewModelScope.launch { settings.setDarkMode(enabled) }
     }
 }

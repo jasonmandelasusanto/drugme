@@ -5,9 +5,13 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.drugme.app.alarm.DoseAlarmScheduler
 import com.drugme.app.alarm.RearmWorker
+import com.drugme.app.data.prefs.SettingsRepository
 import com.drugme.app.data.sync.SyncWorker
 import com.drugme.app.data.repo.DoseRepository
 import com.drugme.app.data.repo.DiseaseCatalogRepository
@@ -26,6 +30,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var doseRepository: DoseRepository
     @Inject lateinit var catalogRepository: DrugCatalogRepository
     @Inject lateinit var diseaseCatalogRepository: DiseaseCatalogRepository
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,7 +56,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            DrugMeTheme {
+            val savedDarkMode by settingsRepository.darkMode.collectAsStateWithLifecycle(
+                initialValue = null,
+            )
+            DrugMeTheme(darkTheme = savedDarkMode ?: isSystemInDarkTheme()) {
                 // DrugMeApp gates on onboarding / sign-in / vault unlock before handing
                 // over to the nav graph.
                 DrugMeApp(
