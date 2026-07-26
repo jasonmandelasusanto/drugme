@@ -68,8 +68,9 @@ After installation:
    instructions shown by the app.
 5. Create a test reminder a few minutes ahead and confirm it fires while the phone is locked.
 
-Release builds check for stable GitHub releases once per day. Debug builds never download
-updates. Android always requires the user to approve installation.
+Release builds check for stable GitHub releases when opened, at most once per 24 hours, with
+a periodic background check as a fallback. Settings also provides an immediate manual check.
+Debug builds never download updates. Android always requires the user to approve installation.
 
 ## Building from source
 

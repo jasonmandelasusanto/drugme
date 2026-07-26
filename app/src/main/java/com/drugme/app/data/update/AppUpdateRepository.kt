@@ -23,6 +23,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.drugme.app.BuildConfig
 import com.drugme.app.MainActivity
 import com.drugme.app.R
+import com.drugme.app.data.medical.NetworkStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -40,6 +43,8 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.time.Clock
+import java.time.Duration
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -53,6 +58,8 @@ data class AppUpdateState(
     val notes: String? = null,
     val downloadSize: Long? = null,
     val downloaded: Boolean = false,
+    /** Set after a successful check finds no version newer than this installation. */
+    val upToDate: Boolean = false,
     val error: String? = null,
 ) {
     val available: Boolean get() = version != null
@@ -79,24 +86,64 @@ private data class GithubAsset(
 @Singleton
 class AppUpdateRepository @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val clock: Clock,
+    private val networkStatus: NetworkStatus,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(AppUpdateState())
     val state: StateFlow<AppUpdateState> = _state.asStateFlow()
+    private val checkMutex = Mutex()
 
     init {
         scope.launch { restoreState() }
     }
 
-    suspend fun checkAndDownload(): Result<Boolean> = withContext(Dispatchers.IO) { runCatching {
-        if (BuildConfig.DEBUG) return@runCatching false
-        _state.value = _state.value.copy(checking = true, error = null)
+    /** A user-requested check always contacts GitHub immediately. */
+    suspend fun checkAndDownload(): Result<Boolean> = runCheck(onlyIfDue = false)
+
+    /** Automatic foreground/worker check, shared-throttled to one attempt per 24 hours. */
+    suspend fun checkIfDue(): Result<Boolean> = runCheck(onlyIfDue = true)
+
+    private suspend fun runCheck(onlyIfDue: Boolean): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            checkMutex.withLock {
+                if (BuildConfig.DEBUG) return@withLock Result.success(false)
+
+                val now = clock.millis()
+                val lastCheck = context.updateDataStore.data.first()[KEY_LAST_CHECK_AT]
+                if (onlyIfDue && !isUpdateCheckDue(now, lastCheck)) {
+                    return@withLock Result.success(false)
+                }
+
+                if (!networkStatus.isOnline()) {
+                    val failure = IllegalStateException("No internet connection.")
+                    if (!onlyIfDue) {
+                        _state.value = _state.value.copy(
+                            checking = false,
+                            downloading = false,
+                            error = failure.message,
+                        )
+                    }
+                    // Do not consume today's automatic check while offline. A later foreground
+                    // or the connected-network WorkManager fallback can still perform it.
+                    return@withLock Result.failure(failure)
+                }
+
+                // Record the online attempt before contacting GitHub. Reopening after a server
+                // failure must not hammer it repeatedly; Settings remains an explicit retry path.
+                context.updateDataStore.edit { it[KEY_LAST_CHECK_AT] = now }
+                checkAndDownloadLocked()
+            }
+        }
+
+    private suspend fun checkAndDownloadLocked(): Result<Boolean> = runCatching {
+        _state.value = _state.value.copy(checking = true, upToDate = false, error = null)
         val release = fetchLatestRelease()
         val version = release.tag.removePrefix("v")
         if (!isNewer(version, BuildConfig.VERSION_NAME)) {
             clearPersisted()
-            _state.value = AppUpdateState()
+            _state.value = AppUpdateState(upToDate = true)
             return@runCatching false
         }
         val saved = context.updateDataStore.data.first()
@@ -137,9 +184,10 @@ class AppUpdateRepository @Inject constructor(
         _state.value = _state.value.copy(
             checking = false,
             downloading = false,
+            upToDate = false,
             error = failure.message ?: "Could not check for updates",
         )
-    } }
+    }
 
     /**
      * Starts a modern PackageInstaller session. Returns false when Android first needs the
@@ -316,6 +364,7 @@ class AppUpdateRepository @Inject constructor(
         val KEY_NOTES = stringPreferencesKey("notes")
         val KEY_PATH = stringPreferencesKey("path")
         val KEY_SIZE = longPreferencesKey("size")
+        val KEY_LAST_CHECK_AT = longPreferencesKey("last_check_at")
     }
 }
 
@@ -355,6 +404,11 @@ internal fun isNewer(candidate: String, current: String): Boolean {
     }
     return false
 }
+
+internal fun isUpdateCheckDue(nowMillis: Long, lastCheckMillis: Long?): Boolean =
+    lastCheckMillis == null ||
+        nowMillis < lastCheckMillis ||
+        nowMillis - lastCheckMillis >= Duration.ofHours(24).toMillis()
 
 private fun sha256(file: File): String {
     val digest = MessageDigest.getInstance("SHA-256")

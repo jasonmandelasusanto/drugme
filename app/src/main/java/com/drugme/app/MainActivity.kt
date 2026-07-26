@@ -16,6 +16,7 @@ import com.drugme.app.data.sync.SyncWorker
 import com.drugme.app.data.repo.DoseRepository
 import com.drugme.app.data.repo.DiseaseCatalogRepository
 import com.drugme.app.data.update.AppUpdateWorker
+import com.drugme.app.data.update.AppUpdateRepository
 import com.drugme.app.data.repo.DrugCatalogRepository
 import com.drugme.app.ui.DrugMeApp
 import com.drugme.app.ui.theme.DrugMeTheme
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var catalogRepository: DrugCatalogRepository
     @Inject lateinit var diseaseCatalogRepository: DiseaseCatalogRepository
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var appUpdates: AppUpdateRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,6 +75,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Opening DrugMe should surface a new release promptly, but not contact GitHub on
+        // every foreground. The repository shares a persisted 24-hour throttle with the
+        // periodic worker; the Settings button is the explicit unthrottled path.
+        lifecycleScope.launch { appUpdates.checkIfDue() }
         // Push any local changes on every foreground: if a per-change push was dropped
         // (offline, process killed right after an edit), this is the reliable catch-up while
         // the app is open and the key is available.

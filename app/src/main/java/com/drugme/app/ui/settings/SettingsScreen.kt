@@ -27,6 +27,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -45,6 +46,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.drugme.app.notify.DoseNotifier
+import com.drugme.app.data.update.AppUpdateState
 import com.drugme.app.ui.components.SectionCard
 import com.drugme.app.ui.onboarding.OemBatteryGuidance
 import java.time.ZoneId
@@ -210,6 +212,20 @@ fun SettingsScreen(
             }
 
             item {
+                AppUpdateSetting(
+                    state = state.appUpdate,
+                    currentVersion = state.currentVersion,
+                    updatesSupported = state.updatesSupported,
+                    onCheck = viewModel::checkForUpdates,
+                    onInstall = {
+                        if (!viewModel.installUpdate()) {
+                            context.startActivity(viewModel.unknownSourcesIntent())
+                        }
+                    },
+                )
+            }
+
+            item {
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = if (state.healthy) MaterialTheme.colorScheme.primaryContainer
@@ -222,6 +238,58 @@ fun SettingsScreen(
                         modifier = Modifier.padding(16.dp),
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun AppUpdateSetting(
+    state: AppUpdateState,
+    currentVersion: String,
+    updatesSupported: Boolean,
+    onCheck: () -> Unit,
+    onInstall: () -> Unit,
+) {
+    SectionCard(title = "App updates") {
+        Text(
+            "Installed version $currentVersion",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            when {
+                !updatesSupported -> "Update checks are disabled in debug builds."
+                state.checking -> "Checking GitHub Releases…"
+                state.downloading -> "Downloading and verifying version ${state.version}…"
+                state.downloaded -> "Version ${state.version} is downloaded and signature-verified."
+                state.error != null -> state.error
+                state.upToDate -> "You’re using the latest version."
+                state.available -> "Version ${state.version} is available."
+                else -> "DrugMe checks GitHub Releases daily. You can also check now."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (state.error != null) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (state.checking || state.downloading) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        if (state.downloaded) {
+            FilledTonalButton(
+                onClick = onInstall,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Review and install")
+            }
+        } else {
+            OutlinedButton(
+                onClick = onCheck,
+                enabled = updatesSupported && !state.checking && !state.downloading,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Check for updates")
             }
         }
     }

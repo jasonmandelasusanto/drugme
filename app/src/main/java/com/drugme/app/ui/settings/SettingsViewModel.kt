@@ -3,9 +3,12 @@ package com.drugme.app.ui.settings
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.drugme.app.BuildConfig
 import com.drugme.app.alarm.DoseAlarmScheduler
 import com.drugme.app.data.prefs.SettingsRepository
 import com.drugme.app.data.repo.DoseRepository
+import com.drugme.app.data.update.AppUpdateRepository
+import com.drugme.app.data.update.AppUpdateState
 import com.drugme.app.notify.DoseNotifier
 import com.drugme.app.ui.onboarding.OemBatteryGuidance
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +32,9 @@ data class ReminderSettingsState(
     val discreetNotifications: Boolean = false,
     /** Null only until the user makes an explicit appearance choice. */
     val darkMode: Boolean? = null,
+    val appUpdate: AppUpdateState = AppUpdateState(),
+    val currentVersion: String = BuildConfig.VERSION_NAME,
+    val updatesSupported: Boolean = !BuildConfig.DEBUG,
 ) {
     val healthy: Boolean
         get() = notificationsOk && exactAlarmsOk && !batteryOptimized
@@ -40,6 +46,7 @@ class SettingsViewModel @Inject constructor(
     private val scheduler: DoseAlarmScheduler,
     private val doseRepository: DoseRepository,
     private val settings: SettingsRepository,
+    private val appUpdates: AppUpdateRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
     private val refresh = MutableStateFlow(0)
@@ -50,7 +57,8 @@ class SettingsViewModel @Inject constructor(
         testResult,
         settings.discreetNotifications,
         settings.darkMode,
-    ) { _, test, discreet, darkMode ->
+        appUpdates.state,
+    ) { _, test, discreet, darkMode, appUpdate ->
         ReminderSettingsState(
             loading = false,
             notificationsOk = notifier.canNotifyReminders(),
@@ -60,6 +68,7 @@ class SettingsViewModel @Inject constructor(
             testResult = test,
             discreetNotifications = discreet,
             darkMode = darkMode,
+            appUpdate = appUpdate,
         )
     }.stateIn(
         viewModelScope,
@@ -84,4 +93,12 @@ class SettingsViewModel @Inject constructor(
     fun setDarkMode(enabled: Boolean) {
         viewModelScope.launch { settings.setDarkMode(enabled) }
     }
+
+    fun checkForUpdates() {
+        viewModelScope.launch { appUpdates.checkAndDownload() }
+    }
+
+    fun installUpdate(): Boolean = appUpdates.installDownloaded()
+
+    fun unknownSourcesIntent() = appUpdates.unknownSourcesIntent()
 }

@@ -21,7 +21,7 @@ class AppUpdateWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result =
-        updates.checkAndDownload().fold(
+        updates.checkIfDue().fold(
             onSuccess = { Result.success() },
             // Periodic work will check again tomorrow. Retrying a 404/malformed release
             // repeatedly would violate the once-daily contract and waste battery/data.
