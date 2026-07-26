@@ -12,6 +12,7 @@
     <string name="reminder_title">Time to take %1$s</string>
     <string name="reminder_title_discreet">Medication reminder</string>
     <string name="reminder_body_discreet">Open DrugMe to see your dose</string>
+    <string name="direct_boot_reminder_body">Unlock your phone to view the dose</string>
 
     <string name="notif_channel_refill_name">Refill reminders</string>
     <string name="notif_channel_refill_desc">Warns you before a medication runs out</string>

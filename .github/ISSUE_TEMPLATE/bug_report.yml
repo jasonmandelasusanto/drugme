@@ -1,0 +1,82 @@
+name: Bug report
+description: Report reproducible incorrect behaviour in DrugMe
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Do not include medication names, account details,
+        recovery codes, Firebase configuration, or other private data.
+
+        **Security vulnerability? Stop here.** Use the private reporting link shown in the
+        issue chooser instead of creating a public issue.
+
+  - type: dropdown
+    id: version
+    attributes:
+      label: Affected version
+      options:
+        - Latest GitHub release
+        - Current main branch
+        - Older release
+        - Fork or modified build
+    validations:
+      required: true
+
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+      placeholder: "For example: Android 15"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: "Manufacturer and model"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic medication names and data.
+      placeholder: |
+        1. Open…
+        2. Tap…
+        3. Observe…
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitised logs or screenshots
+      description: Optional. Remove all personal, health, account, Firebase, and signing data.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: This report does not disclose a security vulnerability or private data.
+          required: true

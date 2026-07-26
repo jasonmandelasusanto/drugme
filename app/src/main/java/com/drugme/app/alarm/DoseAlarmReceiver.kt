@@ -20,9 +20,9 @@ import javax.inject.Inject
  * passphrase on this boot — a reminder engine gated on decryption would go dark every
  * night, exactly when people are asleep and relying on it.
  *
- * The one case this does not cover is a reboot with no subsequent unlock: Room sits in
- * credential-encrypted storage and is unreadable until first unlock. See BootReceiver in
- * the manifest for why direct-boot support is not worth its cost here.
+ * After a reboot with no subsequent unlock, Room is still unavailable. That narrow period is
+ * covered by [DirectBootReminderReceiver], which knows only anonymous reminder timestamps and
+ * posts a generic notification until this full receiver can take over after first unlock.
  */
 @AndroidEntryPoint
 class DoseAlarmReceiver : BroadcastReceiver() {

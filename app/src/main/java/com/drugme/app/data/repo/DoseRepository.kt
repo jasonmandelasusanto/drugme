@@ -93,6 +93,9 @@ class DoseRepository @Inject constructor(
     suspend fun getNextPending(after: Instant = clock.instant()): DoseEntity? =
         doseDao.getNextPending(after.toEpochMilli())
 
+    suspend fun getUpcomingPendingTimes(after: Instant = clock.instant()): List<Long> =
+        doseDao.getUpcomingPendingTimes(after.toEpochMilli())
+
     /**
      * Every dose due right now and still pending — what the alarm posts reminders for.
      *

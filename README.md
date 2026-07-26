@@ -5,84 +5,165 @@
 
   **A private, offline-first medication reminder for Android.**
 
-  Reminds you when to take each medication, tracks how well you keep to it, and — only if you
-  want it — keeps an end-to-end encrypted backup across your devices.
+  Track medication schedules and adherence locally, with optional end-to-end encrypted
+  backup across devices.
+
+  [![CI](https://github.com/jasonmandelasusanto/drugme/actions/workflows/ci.yml/badge.svg)](https://github.com/jasonmandelasusanto/drugme/actions/workflows/ci.yml)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 </div>
 
 ---
 
-## Why
+## About
 
-A medication reminder has exactly one job, and it fails silently: a dropped alarm or a
-notification nobody sees looks identical to everything working. DrugMe is built around that
-failure mode — the reminder engine runs entirely on-device, needs no account, and heals its
-own alarm chain after reboots and OEM battery kills. An account is offered for cloud backup,
-never required.
+A medication reminder can fail silently: a dropped alarm or unseen notification can look
+identical to everything working. DrugMe keeps its reminder engine on-device, requires no
+account, restores alarms after reboots and time changes, and runs a periodic repair pass.
+Google sign-in is offered only for encrypted backup and sync.
+
+DrugMe is a reminder and personal record-keeping tool. It does not provide medical advice,
+diagnose conditions, verify prescriptions, or replace a doctor or pharmacist.
 
 ## Features
 
-- **Dose reminders** with *Taken / Snooze / Skip* actions, at exact alarm times that survive
-  reboots, time-zone changes and app-standby.
-- **Flexible schedules** — several times a day, specific days of the week, or every N days,
-  with optional start/end dates and food instructions ("with food", "empty stomach").
-- **Adherence & punctuality stats** — how many doses you took, and how close to on-time.
-- **Refill / low-stock warnings** — optional per-medication stock tracking with a run-out
-  forecast.
-- **Focused dashboard** — next dose, today's progress, overdue doses and important low-stock
-  alerts, with reminder diagnostics and testing kept in Settings.
-- **Discreet mode** — notifications that never name the drug, because a drug name on a lock
-  screen is a diagnosis in disguise.
-- **Schedule & history tools** — upcoming, overdue, missed and completed doses with
-  date/medication/status filters, notes, an adherence strip and CSV export.
-- **Global medication lookup** — offline RxNorm-derived suggestions enhanced by RxNorm,
-  with synonym/typo support and attributed MedlinePlus/openFDA/DailyMed information.
-- **Optional end-to-end encrypted backup & sync** via Google sign-in — see below.
-- **Verified self-updates** — release builds check GitHub Releases daily, download a newer
-  APK, verify its SHA-256 digest and signing certificate, then hand it to Android's installer
-  for user confirmation.
+- **On-device dose reminders** with Taken, Snooze, and Skip actions.
+- **Flexible schedules** for multiple daily times, selected weekdays, or every N days, with
+  optional start and end dates, per-time doses, and food instructions.
+- **Home dashboard** showing the next dose, today's progress, overdue doses, refill warnings,
+  and reminder health.
+- **Monthly schedule calendar** with medication-count dots and a focused dose list for the
+  selected day.
+- **Adherence and punctuality insights**, dose notes, status and medication filters, and CSV
+  export.
+- **Stock and refill tracking** with estimated run-out warnings.
+- **Discreet notifications** that hide medication names and dose details.
+- **Light and dark themes**, selected during first-time setup and changeable in Settings.
+- **Medication lookup and information** using an offline RxNorm-derived catalog plus optional
+  RxNorm, MedlinePlus, openFDA, and DailyMed data over HTTPS.
+- **Optional end-to-end encrypted backup and sync** with Google sign-in and Cloud Firestore.
+- **Verified self-updates** in release builds: DrugMe checks GitHub Releases daily, verifies
+  the downloaded APK's SHA-256 digest and signing certificate, and asks Android for
+  installation confirmation.
 
-## Privacy & security
+## Requirements
 
-Your medications stay on your phone unless you choose to back them up. If you do:
+- Android 8.0 (API 26) or newer
+- JDK 17
+- Android SDK Platform 36
+- Android Studio or the included Gradle wrapper
 
-- Records are encrypted on-device with **AES-256-GCM** before they ever leave; each blob is
-  bound to its record and owner so it can't be moved or swapped.
-- The encryption key is wrapped with a key derived from your passphrase using **Argon2id**.
-  A one-time **recovery code** is the only other way in.
-- The server (Cloud Firestore) stores **only ciphertext**. No one — not Google, not the
-  maintainer — can read your data. Lose both the passphrase and recovery code and it is
-  unrecoverable, by design.
-- Ownership is enforced by Firestore security rules and **Firebase App Check**; confidentiality
-  is enforced by the encryption. Both layers, independently.
+## Installing the app
 
-Found a security issue? See [SECURITY.md](SECURITY.md).
+Official APKs are published under
+[GitHub Releases](https://github.com/jasonmandelasusanto/drugme/releases). Download the
+release APK on your Android device and allow installation from that source when Android
+asks.
 
-## Tech stack
+After installation:
 
-Kotlin · Jetpack Compose (Material 3) · Room · Hilt · WorkManager · Firebase Auth + Firestore ·
-Coil · BouncyCastle (Argon2)
+1. Complete the in-app disclaimer and appearance setup.
+2. Allow notifications.
+3. Review the battery-optimisation guidance.
+4. On devices with aggressive background restrictions, follow the additional manufacturer
+   instructions shown by the app.
+5. Create a test reminder a few minutes ahead and confirm it fires while the phone is locked.
 
-## Building
+Release builds check for stable GitHub releases once per day. Debug builds never download
+updates. Android always requires the user to approve installation.
 
-Requires **JDK 17** and the Android SDK.
+## Building from source
+
+Clone the repository:
 
 ```bash
-# Debug build (no Firebase project needed — a placeholder google-services.json is used,
-# so sign-in and sync are inert but everything else compiles and runs):
-./gradlew assembleDebug
-
-# Unit tests:
-./gradlew test
+git clone https://github.com/jasonmandelasusanto/drugme.git
+cd drugme
 ```
 
-To enable sign-in and cloud sync, drop a real `app/google-services.json` from your own Firebase
-project into place (it's gitignored). Backend hardening steps are in
-[docs/firebase-hardening.md](docs/firebase-hardening.md).
+The Google Services Gradle plugin requires a configuration file even when Firebase features
+are not being used. For an offline/local development build, copy the committed placeholder:
 
-Medication lookup does not require an API key. RxNorm, MedlinePlus Connect and openFDA are
-queried directly over HTTPS; failures never block saving a medication or scheduling reminders.
-Official information is cached for 24 hours, with a maximum seven-day cached fallback while
-offline. openFDA/DailyMed sections are labeled as U.S. drug labeling in the app.
+```bash
+cp .github/google-services.placeholder.json app/google-services.json
+```
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item .github/google-services.placeholder.json app/google-services.json
+```
+
+Then run the same checks used by CI:
+
+```bash
+./gradlew testDebugUnitTest
+./gradlew lintDebug
+./gradlew assembleDebug
+```
+
+On Windows, use `.\gradlew.bat` instead of `./gradlew`.
+
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The placeholder
+Firebase project is intentionally non-functional: medication reminders and local storage
+work, but Google sign-in and cloud sync do not.
+
+### Enabling Firebase backup and sync
+
+To develop backup and sync features:
+
+1. Create your own Firebase project and Android app registrations for
+   `com.drugme.app` and `com.drugme.app.debug`.
+2. Replace `app/google-services.json` with the file from that project.
+3. Deploy [`firestore.rules`](firestore.rules).
+4. Follow the App Check and backend checklist in
+   [`docs/firebase-hardening.md`](docs/firebase-hardening.md).
+
+Never commit a real Firebase configuration, service-account credential, signing key, or
+`keystore.properties`. The repository's `.gitignore` excludes them.
+
+Fork release builds should also change the hard-coded GitHub Releases endpoint in
+`AppUpdateRepository` to their own repository. An APK downloaded from another signer will
+be rejected by design.
+
+## Privacy and security
+
+Medication data is stored locally in a Room database inside Android's
+credential-encrypted application sandbox. The database itself is not additionally encrypted
+with SQLCipher. Android cloud/device-transfer backup is disabled so plaintext medication
+history is not copied outside that boundary.
+
+If encrypted backup is enabled:
+
+- Records are encrypted on-device with AES-256-GCM before upload.
+- Each encrypted record is bound to its owner and record identifier using authenticated
+  additional data.
+- The data-encryption key is wrapped using a key derived from the passphrase with Argon2id.
+- A one-time recovery code provides the only alternative recovery path.
+- Firestore stores ciphertext and wrapped key material; its security rules separately enforce
+  ownership.
+
+Losing both the passphrase and recovery code makes the encrypted backup unrecoverable.
+
+Please report vulnerabilities privately according to [`SECURITY.md`](SECURITY.md). Do not
+put vulnerability details in a public issue.
+
+## Contributing
+
+Bug reports, feature proposals, documentation improvements, and pull requests are welcome.
+
+- Use [GitHub Issues](https://github.com/jasonmandelasusanto/drugme/issues) for ordinary bugs
+  and feature requests.
+- Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+- Use GitHub's private vulnerability reporting for security issues.
+
+This is a medication-related application, so changes to reminder timing, persistence,
+database migrations, cryptography, authentication, or update verification require especially
+careful tests and review.
+
+## Technology
+
+Kotlin · Jetpack Compose and Material 3 · Room · Hilt · WorkManager · Firebase Auth and
+Firestore · Coil · Bouncy Castle
 
 ## License
 

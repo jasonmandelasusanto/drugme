@@ -22,15 +22,11 @@ file, and use the **Rules Playground** to confirm:
 App Check ensures requests come from the genuine app, not a script replaying the public
 config against your Firestore/Auth.
 
-### Code (in this repo)
+### Code (already implemented in this repo)
 
-- Add the App Check dependency via the existing Firebase BOM in
-  [`app/build.gradle.kts`](../app/build.gradle.kts):
-  - `com.google.firebase:firebase-appcheck-playintegrity` (release)
-  - `com.google.firebase:firebase-appcheck-debug` (debug builds only)
-- Initialize it in `DrugMeApplication.onCreate()`:
-  - Release: install the **Play Integrity** provider.
-  - Debug: install the **debug** provider so local and CI builds still reach Firebase.
+- [`app/build.gradle.kts`](../app/build.gradle.kts) includes the Play Integrity provider for
+  release builds and the debug provider for debug builds.
+- `DrugMeApplication.onCreate()` installs the appropriate provider for the active build type.
 
 ### Console (you do this)
 
@@ -45,9 +41,11 @@ config against your Firestore/Auth.
 > Enforcing before the app is correctly registered will lock the app out of its own backend —
 > always verify in monitoring mode first.
 
-## 3. Before flipping the repo to public
+## 3. Public-repository hygiene
 
 - Confirm no real `google-services.json` or keystore is tracked (`git ls-files | grep -i
   google-services` should show only the placeholder).
-- Confirm the git history carries a single intended identity (see the identity-rewrite step
-  in the project plan).
+- Review the repository and its history for credentials before publishing changes.
+- Keep release keystores, service-account files, Firebase configuration, and
+  `keystore.properties` outside the repository.
+- Follow [`SECURITY.md`](../SECURITY.md) for vulnerability handling.

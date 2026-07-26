@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest an improvement to DrugMe
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user problem first. DrugMe is not a medical-advice tool, and proposed
+        features must preserve medication-data privacy.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is difficult or missing for the user today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: Describe the desired behaviour without requiring a specific implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional. Include current workarounds or other approaches.
+
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy, reminder, or medical-data impact
+      description: Note any new permissions, network access, stored data, or timing changes.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this request.
+          required: true
+        - label: This request does not contain private health or account data.
+          required: true

@@ -140,6 +140,21 @@ interface DoseDao {
     )
     suspend fun getNextPending(afterMillis: Long): DoseEntity?
 
+    /**
+     * Anonymous future reminder times mirrored to device-protected storage.
+     *
+     * DISTINCT collapses medications sharing a time: before first unlock the app posts one
+     * generic reminder and deliberately cannot identify the medications behind it.
+     */
+    @Query(
+        """
+        SELECT DISTINCT COALESCE(snoozedUntil, scheduledAt) FROM doses
+        WHERE status = 'PENDING' AND COALESCE(snoozedUntil, scheduledAt) >= :afterMillis
+        ORDER BY COALESCE(snoozedUntil, scheduledAt) ASC
+        """
+    )
+    suspend fun getUpcomingPendingTimes(afterMillis: Long): List<Long>
+
     /** Doses whose grace window has closed with no user action. */
     @Query(
         """

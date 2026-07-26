@@ -149,4 +149,26 @@ class DoseDueDaoTest {
 
         assertEquals(listOf("due"), due.map { it.medication.name })
     }
+
+    @Test
+    fun `direct boot shadow contains distinct pending effective times only`() = runTest {
+        addDose("same_a", now.plusSeconds(3_600))
+        addDose("same_b", now.plusSeconds(3_600))
+        addDose(
+            "snoozed",
+            now.minusSeconds(3_600),
+            snoozedUntil = now.plusSeconds(600),
+        )
+        addDose("taken", now.plusSeconds(1_800), status = DoseStatus.TAKEN)
+
+        val times = doseDao.getUpcomingPendingTimes(now.toEpochMilli())
+
+        assertEquals(
+            listOf(
+                now.plusSeconds(600).toEpochMilli(),
+                now.plusSeconds(3_600).toEpochMilli(),
+            ),
+            times,
+        )
+    }
 }

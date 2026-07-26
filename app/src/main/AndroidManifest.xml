@@ -102,21 +102,7 @@
             android:exported="false" />
 
         <!--
-          Re-arms the chain after events that destroy pending alarms.
-
-          KNOWN GAP — reboot before first unlock. Room lives in credential-encrypted
-          storage, so it is unreadable until the user unlocks once after a reboot, and
-          BOOT_COMPLETED is only delivered then. A phone that reboots at 03:00 and is not
-          unlocked until 07:00 will not fire a 06:00 dose; it is marked MISSED on the next
-          heal pass instead.
-
-          LOCKED_BOOT_COMPLETED is deliberately NOT registered: it is only delivered to
-          directBootAware components, and making this one direct-boot-aware would require
-          moving the database to device-protected storage — which is encrypted with a
-          device key rather than the user's credential, i.e. readable from a stolen powered
-          -off phone without the PIN. Trading at-rest confidentiality of a medication
-          history for a rare edge case is the wrong bargain, and a half-registered
-          broadcast that never fires would be worse than either.
+          Re-arms the full Room-backed chain after events that destroy pending alarms.
 
           QUICKBOOT/HTC actions cover OEMs that never send the standard broadcast.
           TIMEZONE_CHANGED and TIME_SET matter because doses are stored as wall-clock
@@ -134,6 +120,22 @@
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+          Runs before first unlock after reboot. It can read only an anonymous timestamp queue
+          from device-protected storage and therefore posts a generic reminder with no medication
+          name, dose, identifier, notes, or history. BOOT_COMPLETED hands control back to the
+          credential-encrypted Room-backed receiver above.
+        -->
+        <receiver
+            android:name=".alarm.DirectBootReminderReceiver"
+            android:directBootAware="true"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 

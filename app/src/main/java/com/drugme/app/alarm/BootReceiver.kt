@@ -31,6 +31,10 @@ class BootReceiver : BroadcastReceiver() {
         val action = intent.action
         Log.i(TAG, "Re-arming after $action")
 
+        // Stop the anonymous pre-unlock chain before doing asynchronous Room work. A generic
+        // notification that already fired stays visible; only future shadow alarms stop.
+        DirectBootReminderAlarm(context).cancel()
+
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {

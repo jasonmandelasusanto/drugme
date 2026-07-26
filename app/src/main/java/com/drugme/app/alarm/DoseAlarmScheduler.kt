@@ -38,6 +38,7 @@ import javax.inject.Singleton
 class DoseAlarmScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val doseRepository: DoseRepository,
+    private val directBootStore: DirectBootReminderStore,
     private val clock: Clock,
 ) {
 
@@ -55,6 +56,18 @@ class DoseAlarmScheduler @Inject constructor(
             cancel()
             Log.i(TAG, "No pending doses; alarm chain idle.")
             return
+        }
+
+        // Keep an anonymous rolling queue outside credential-encrypted storage. AlarmManager
+        // registrations disappear at reboot; LOCKED_BOOT_COMPLETED reads this queue to restore
+        // generic reminders without exposing any medication data before first unlock.
+        runCatching {
+            directBootStore.replace(doseRepository.getUpcomingPendingTimes())
+            DirectBootReminderAlarm(context).cancel()
+        }.onFailure {
+            // Direct Boot is a backstop. Its failure must never prevent the normal, more
+            // informative credential-unlocked reminder from being armed.
+            Log.e(TAG, "Could not refresh the anonymous direct-boot queue", it)
         }
         armAt(next.effectiveAt, next.id)
     }
@@ -96,6 +109,10 @@ class DoseAlarmScheduler @Inject constructor(
     }
 
     fun cancel() {
+        runCatching {
+            directBootStore.clear()
+            DirectBootReminderAlarm(context).cancel()
+        }.onFailure { Log.e(TAG, "Could not clear the anonymous direct-boot queue", it) }
         val intent = Intent(context, DoseAlarmReceiver::class.java).apply {
             action = DoseAlarmReceiver.ACTION_DOSE_DUE
         }
